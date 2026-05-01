@@ -1,3 +1,4 @@
+import process from 'node:process';
 import { computeDailyBreakdown, estimateHours } from './estimate.ts';
 import { dayName, isoWeekNumber } from './format.ts';
 import type { CommitEntry, Options, SessionResult } from './types.ts';
@@ -20,7 +21,7 @@ function toJsonResult(r: SessionResult): JsonResult {
   };
 }
 
-export function printJson(commits: CommitEntry[], opts: Options): void {
+export function buildJsonPayload(commits: CommitEntry[], opts: Options): Record<string, unknown> {
   const total = estimateHours(commits, opts);
   const payload: Record<string, unknown> = {
     range: { since: opts.since ?? null, until: opts.until ?? null },
@@ -61,16 +62,24 @@ export function printJson(commits: CommitEntry[], opts: Options): void {
       }));
   }
 
-  console.log(JSON.stringify(payload));
+  return payload;
+}
+
+export function formatCsv(commits: CommitEntry[], opts: Options): string {
+  const lines = ['date,day,week,hours,commits,sessions'];
+  if (commits.length === 0)
+    return `${lines[0]}\n`;
+  const daily = computeDailyBreakdown(commits, opts);
+  const rows = [...daily.entries()].sort(([a], [b]) => a.localeCompare(b));
+  for (const [date, r] of rows)
+    lines.push(`${date},${dayName(date)},${isoWeekNumber(date)},${r.hours.toFixed(4)},${r.commits},${r.sessions}`);
+  return `${lines.join('\n')}\n`;
+}
+
+export function printJson(commits: CommitEntry[], opts: Options): void {
+  console.log(JSON.stringify(buildJsonPayload(commits, opts)));
 }
 
 export function printCsv(commits: CommitEntry[], opts: Options): void {
-  console.log('date,day,week,hours,commits,sessions');
-  if (commits.length === 0)
-    return;
-  const daily = computeDailyBreakdown(commits, opts);
-  const rows = [...daily.entries()].sort(([a], [b]) => a.localeCompare(b));
-  for (const [date, r] of rows) {
-    console.log(`${date},${dayName(date)},${isoWeekNumber(date)},${r.hours.toFixed(4)},${r.commits},${r.sessions}`);
-  }
+  process.stdout.write(formatCsv(commits, opts));
 }

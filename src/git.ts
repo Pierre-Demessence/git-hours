@@ -2,10 +2,35 @@ import { execFileSync } from 'node:child_process';
 import process from 'node:process';
 import type { CommitEntry, Options } from './types.ts';
 
+// ASCII Unit Separator (0x1F) avoids collisions with `|` or other punctuation
+// that may legitimately appear in author names or commit subjects.
+const FS = '\x1f';
+
+export function parseLogOutput(raw: string): CommitEntry[] {
+  if (!raw)
+    return [];
+  return raw.split('\n').map((line) => {
+    const [ts, author, email, ...msgParts] = line.split(FS);
+    return {
+      author,
+      email,
+      message: msgParts.join(FS),
+      timestamp: Number(ts) * 1000,
+    };
+  });
+}
+
+export function applyExcludeAuthors(commits: CommitEntry[], excludes: string[]): CommitEntry[] {
+  if (excludes.length === 0)
+    return commits;
+  const lowered = excludes.map(s => s.toLowerCase());
+  return commits.filter((c) => {
+    const hay = `${c.author} <${c.email}>`.toLowerCase();
+    return !lowered.some(p => hay.includes(p));
+  });
+}
+
 export function getCommits(opts: Options): CommitEntry[] {
-  // ASCII Unit Separator (0x1F) avoids collisions with `|` or other punctuation
-  // that may legitimately appear in author names or commit subjects.
-  const FS = '\x1f';
   // %aN / %aE apply the repo's .mailmap so identity aliases collapse.
   const args = ['log', `--format=%at${FS}%aN${FS}%aE${FS}%s`, '--no-merges'];
 
@@ -49,20 +74,5 @@ export function getCommits(opts: Options): CommitEntry[] {
   if (!raw)
     return [];
 
-  const excludes = opts.excludeAuthor.map(s => s.toLowerCase());
-  const all = raw.split('\n').map((line) => {
-    const [ts, author, email, ...msgParts] = line.split(FS);
-    return {
-      author,
-      email,
-      message: msgParts.join(FS),
-      timestamp: Number(ts) * 1000,
-    };
-  });
-  if (excludes.length === 0)
-    return all;
-  return all.filter((c) => {
-    const hay = `${c.author} <${c.email}>`.toLowerCase();
-    return !excludes.some(p => hay.includes(p));
-  });
+  return applyExcludeAuthors(parseLogOutput(raw), opts.excludeAuthor);
 }
