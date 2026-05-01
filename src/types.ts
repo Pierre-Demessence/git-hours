@@ -1,6 +1,8 @@
 export interface Options {
   allAuthors: boolean;
+  allBranches: boolean;
   author?: string;
+  branch?: string;
   firstCommitMinutes: number;
   gapMinutes: number;
   repo?: string;

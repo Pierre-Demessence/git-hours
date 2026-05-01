@@ -33,6 +33,8 @@ git-hours [options]
 | `--first <minutes>` | Time credited for the first commit in a session (default: `30`) |
 | `--author <name>` | Filter by author name (substring match) |
 | `--all-authors` | Show per-author breakdown |
+| `--branch <name>` | Analyze a specific branch (default: HEAD) |
+| `--all-branches` | Analyze commits reachable from any ref |
 | `--summary-only` | Skip the per-day breakdown |
 | `--repo <path>` | Path to git repository (default: current directory) |
 | `-h`, `--help` | Show help |

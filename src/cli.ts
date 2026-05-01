@@ -53,6 +53,8 @@ export function parseArgs(argv: string[]): Options {
     .addOption(new Option('--first <minutes>', 'time credited for the first commit in a session').default(30).argParser(parsePositiveNumber('first')))
     .addOption(new Option('--author <name>', 'filter by author name (substring match)').conflicts('allAuthors'))
     .option('--all-authors', 'show per-author breakdown', false)
+    .addOption(new Option('--branch <name>', 'analyze a specific branch (default: HEAD)').conflicts('allBranches'))
+    .option('--all-branches', 'analyze commits reachable from any ref', false)
     .option('--summary-only', 'skip the per-day breakdown', false)
     .option('--repo <path>', 'path to git repository (default: current directory)')
     .addHelpText('after', '\nExamples:\n  git-hours --month 2025-03\n  git-hours --since 2025-03-01 --until 2025-04-01\n  git-hours --week 2025-03-24\n  git-hours --this-week\n  git-hours --last-month\n  git-hours --gap 90 --first 20\n  git-hours --repo ../other-repo\n')
@@ -73,7 +75,9 @@ export function parseArgs(argv: string[]): Options {
 
   const raw = program.opts<{
     allAuthors: boolean;
+    allBranches: boolean;
     author?: string;
+    branch?: string;
     first: number;
     gap: number;
     lastMonth?: boolean;
@@ -92,7 +96,9 @@ export function parseArgs(argv: string[]): Options {
 
   const opts: Options = {
     allAuthors: raw.allAuthors,
+    allBranches: raw.allBranches,
     author: raw.author,
+    branch: raw.branch,
     firstCommitMinutes: raw.first,
     gapMinutes: raw.gap,
     repo: raw.repo,
@@ -100,6 +106,11 @@ export function parseArgs(argv: string[]): Options {
     summaryOnly: raw.summaryOnly,
     until: raw.until,
   };
+
+  if (raw.branch && raw.branch.startsWith('-')) {
+    console.error(`git-hours: --branch must not start with '-' (got "${raw.branch}")`);
+    process.exit(2);
+  }
 
   if (raw.since)
     validateIsoDate(raw.since, 'since');

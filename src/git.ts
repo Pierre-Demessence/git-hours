@@ -11,6 +11,10 @@ export function getCommits(opts: Options): CommitEntry[] {
     args.push(`--until=${opts.until}`);
   if (opts.author)
     args.push(`--author=${opts.author}`);
+  if (opts.allBranches)
+    args.push('--all');
+  else if (opts.branch)
+    args.push(opts.branch);
 
   let raw: string;
   try {
