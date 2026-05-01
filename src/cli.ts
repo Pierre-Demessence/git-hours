@@ -1,5 +1,6 @@
 import process from 'node:process';
 import { Command, Option } from 'commander';
+import pkg from '../package.json' with { type: 'json' };
 import type { Options } from './types.ts';
 
 function parsePositiveNumber(name: string) {
@@ -39,6 +40,7 @@ export function parseArgs(argv: string[]): Options {
   const program = new Command()
     .name('git-hours')
     .description('Estimate work time from git commit history')
+    .version(pkg.version, '-v, --version', 'output the version number')
     .option('--since <date>', 'start date (ISO, e.g. 2025-03-01)')
     .option('--until <date>', 'end date (ISO, e.g. 2025-04-01)')
     .option('--month <YYYY-MM>', 'shortcut: analyze a specific month')
