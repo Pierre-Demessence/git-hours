@@ -39,9 +39,11 @@ export function printJson(commits: CommitEntry[], opts: Options): void {
       list.push(c);
       byAuthor.set(c.author, list);
     }
-    payload.perAuthor = [...byAuthor.entries()]
+    const ranked = [...byAuthor.entries()]
       .map(([author, list]) => ({ author, ...toJsonResult(estimateHours(list, opts)) }))
       .sort((a, b) => b.hours - a.hours);
+    payload.perAuthor = opts.top ? ranked.slice(0, opts.top) : ranked;
+    payload.totalAuthors = ranked.length;
   }
 
   if (opts.daily) {

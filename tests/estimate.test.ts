@@ -8,6 +8,7 @@ const baseOpts: Options = {
   allBranches: false,
   autoGap: false,
   daily: false,
+  excludeAuthor: [],
   firstCommitMinutes: 30,
   format: 'text',
   gapMinutes: 120,

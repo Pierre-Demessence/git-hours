@@ -44,11 +44,15 @@ function main(): void {
     const ranked = [...byAuthor.entries()]
       .map(([author, authorCommits]) => ({ author, result: estimateHours(authorCommits, opts) }))
       .sort((a, b) => b.result.hours - a.result.hours);
-    for (const { author, result } of ranked) {
+    const totalAuthors = ranked.length;
+    const shown = opts.top ? ranked.slice(0, opts.top) : ranked;
+    for (const { author, result } of shown) {
       printResult(author, result);
       grandTotal += result.hours;
       console.log();
     }
+    if (opts.top && opts.top < totalAuthors)
+      console.log(`  (showing top ${shown.length} of ${totalAuthors} authors)`);
     console.log(`  Grand total: ${formatHours(grandTotal)}\n`);
   }
   else {

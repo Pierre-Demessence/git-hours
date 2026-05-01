@@ -5,12 +5,14 @@ export interface Options {
   autoGap: boolean;
   branch?: string;
   daily: boolean;
+  excludeAuthor: string[];
   firstCommitMinutes: number;
   format: 'text' | 'json' | 'csv';
   gapMinutes: number;
   heatmap: boolean;
   repo?: string;
   since?: string;
+  top?: number;
   until?: string;
 }
 

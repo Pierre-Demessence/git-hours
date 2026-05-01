@@ -56,6 +56,8 @@ export function parseArgs(argv: string[]): Options {
     .addOption(new Option('--auto-gap', 'auto-pick gap from commit cadence (P90 of inter-commit deltas)').conflicts('gap').default(false))
     .addOption(new Option('--author <name>', 'filter by author name (substring match)').conflicts('allAuthors'))
     .option('--all-authors', 'show per-author breakdown', false)
+    .option('--exclude-author <name...>', 'exclude commits by author (repeatable, substring match)')
+    .addOption(new Option('--top <n>', 'limit --all-authors to the top N by hours').argParser(parsePositiveNumber('top')))
     .addOption(new Option('--branch <name>', 'analyze a specific branch (default: HEAD)').conflicts('allBranches'))
     .option('--all-branches', 'analyze commits reachable from any ref', false)
     .option('--daily', 'include the per-day breakdown', false)
@@ -87,6 +89,7 @@ export function parseArgs(argv: string[]): Options {
     branch?: string;
     csv: boolean;
     daily: boolean;
+    excludeAuthor?: string[];
     first: number;
     gap: number;
     heatmap: boolean;
@@ -99,6 +102,7 @@ export function parseArgs(argv: string[]): Options {
     thisMonth?: boolean;
     thisWeek?: boolean;
     today?: boolean;
+    top?: number;
     until?: string;
     week?: string;
     yesterday?: boolean;
@@ -111,18 +115,31 @@ export function parseArgs(argv: string[]): Options {
     autoGap: raw.autoGap,
     branch: raw.branch,
     daily: raw.daily || raw.csv,
+    excludeAuthor: raw.excludeAuthor ?? [],
     firstCommitMinutes: raw.first,
     format: raw.json ? 'json' : raw.csv ? 'csv' : 'text',
     gapMinutes: raw.gap,
     heatmap: raw.heatmap,
     repo: raw.repo,
     since: raw.since,
+    top: raw.top,
     until: raw.until,
   };
 
   if (raw.branch && raw.branch.startsWith('-')) {
     console.error(`git-hours: --branch must not start with '-' (got "${raw.branch}")`);
     process.exit(2);
+  }
+
+  if (opts.top !== undefined) {
+    if (!Number.isInteger(opts.top) || opts.top < 1) {
+      console.error('git-hours: --top must be a positive integer');
+      process.exit(2);
+    }
+    if (!opts.allAuthors) {
+      console.error('git-hours: --top requires --all-authors');
+      process.exit(2);
+    }
   }
 
   if (raw.since)

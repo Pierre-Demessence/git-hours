@@ -41,6 +41,8 @@ git-hours [options]
 | `--gap <minutes>` | Max gap between commits in a session (default: `120`) |
 | `--first <minutes>` | Time credited for the first commit in a session (default: `30`) || `--auto-gap` | Auto-pick gap from commit cadence (P90 of inter-commit deltas ≤ 6h, clamped to 60–240) || `--author <name>` | Filter by author name (substring match) |
 | `--all-authors` | Show per-author breakdown |
+| `--exclude-author <name...>` | Exclude commits by author (repeatable, substring match) |
+| `--top <n>` | Limit `--all-authors` to the top N authors by hours |
 | `--branch <name>` | Analyze a specific branch (default: HEAD) |
 | `--all-branches` | Analyze commits reachable from any ref |
 | `--daily` | Include the per-day breakdown (off by default) |
@@ -49,6 +51,7 @@ git-hours [options]
 | `--csv` | Emit the daily breakdown as CSV (implies `--daily`) |
 | `--repo <path>` | Path to git repository (default: current directory) |
 | `-h`, `--help` | Show help |
+| `-v`, `--version` | Show the version |
 
 ### Examples
 

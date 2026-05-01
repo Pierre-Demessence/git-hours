@@ -48,7 +48,8 @@ export function getCommits(opts: Options): CommitEntry[] {
   if (!raw)
     return [];
 
-  return raw.split('\n').map((line) => {
+  const excludes = opts.excludeAuthor.map(s => s.toLowerCase());
+  const all = raw.split('\n').map((line) => {
     const [ts, author, ...msgParts] = line.split(FS);
     return {
       author,
@@ -56,4 +57,7 @@ export function getCommits(opts: Options): CommitEntry[] {
       timestamp: Number(ts) * 1000,
     };
   });
+  if (excludes.length === 0)
+    return all;
+  return all.filter(c => !excludes.some(p => c.author.toLowerCase().includes(p)));
 }
