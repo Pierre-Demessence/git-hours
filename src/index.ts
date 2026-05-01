@@ -3,6 +3,7 @@ import { parseArgs } from './cli.ts';
 import { computeDailyBreakdown, estimateHours, pickAutoGap } from './estimate.ts';
 import { formatHours } from './format.ts';
 import { getCommits } from './git.ts';
+import { printHeatmap } from './heatmap.ts';
 import { printDailyBreakdown, printResult } from './print.ts';
 import type { CommitEntry } from './types.ts';
 
@@ -48,6 +49,9 @@ function main(): void {
     const daily = computeDailyBreakdown(commits, opts);
     printDailyBreakdown(daily);
   }
+
+  if (commits.length > 0 && opts.heatmap)
+    printHeatmap(commits);
 }
 
 main();

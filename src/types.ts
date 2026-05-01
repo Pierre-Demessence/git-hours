@@ -6,6 +6,7 @@ export interface Options {
   branch?: string;
   firstCommitMinutes: number;
   gapMinutes: number;
+  heatmap: boolean;
   repo?: string;
   since?: string;
   summaryOnly: boolean;

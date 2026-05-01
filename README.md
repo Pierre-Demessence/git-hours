@@ -35,6 +35,7 @@ git-hours [options]
 | `--branch <name>` | Analyze a specific branch (default: HEAD) |
 | `--all-branches` | Analyze commits reachable from any ref |
 | `--summary-only` | Skip the per-day breakdown |
+| `--heatmap` | Print a 7×24 hour-of-day × day-of-week heatmap |
 | `--repo <path>` | Path to git repository (default: current directory) |
 | `-h`, `--help` | Show help |
 

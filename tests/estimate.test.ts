@@ -9,6 +9,7 @@ const baseOpts: Options = {
   autoGap: false,
   firstCommitMinutes: 30,
   gapMinutes: 120,
+  heatmap: false,
   summaryOnly: false,
 };
 
