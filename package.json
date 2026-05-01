@@ -2,6 +2,9 @@
   "name": "git-hours",
   "version": "1.0.0",
   "private": true,
+  "engines": {
+    "node": ">=20"
+  },
   "bin": {
     "git-hours": "./bin/git-hours.mjs"
   },
@@ -11,7 +14,7 @@
   ],
   "dependencies": {
     "commander": "^12.1.0",
-    "tsx": "^4.x"
+    "tsx": "^4.20.0"
   },
   "devDependencies": {
     "@types/node": "^25.6.0"
