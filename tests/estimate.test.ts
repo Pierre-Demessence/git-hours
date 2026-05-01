@@ -1,12 +1,15 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { computeDailyBreakdown, estimateHours } from '../src/estimate.ts';
+import { computeDailyBreakdown, estimateHours, pickAutoGap } from '../src/estimate.ts';
 import type { CommitEntry, Options } from '../src/types.ts';
 
 const baseOpts: Options = {
   allAuthors: false,
+  allBranches: false,
+  autoGap: false,
   firstCommitMinutes: 30,
   gapMinutes: 120,
+  summaryOnly: false,
 };
 
 function commit(timestamp: number, author = 'a', message = 'm'): CommitEntry {
@@ -68,5 +71,43 @@ describe('computeDailyBreakdown', () => {
     assert.equal(daily.size, 2);
     assert.equal(daily.get('2025-03-05')?.commits, 2);
     assert.equal(daily.get('2025-03-06')?.commits, 1);
+  });
+});
+
+describe('pickAutoGap', () => {
+  const minute = 60 * 1000;
+
+  it('falls back to 120 when too few commits', () => {
+    assert.equal(pickAutoGap([]), 120);
+    assert.equal(pickAutoGap([commit(0), commit(minute)]), 120);
+  });
+
+  it('falls back to 120 when too few within-session deltas', () => {
+    const t = Date.now();
+    const day = 24 * 60 * minute;
+    assert.equal(pickAutoGap([0, 1, 2, 3, 4, 5].map((i) => commit(t + i * day))), 120);
+  });
+
+  it('clamps below 60', () => {
+    const t = Date.now();
+    const commits = Array.from({ length: 30 }, (_, i) => commit(t + i * 5 * minute));
+    assert.equal(pickAutoGap(commits), 60);
+  });
+
+  it('clamps above 240', () => {
+    const t = Date.now();
+    const commits = Array.from({ length: 30 }, (_, i) => commit(t + i * 350 * minute));
+    assert.equal(pickAutoGap(commits), 240);
+  });
+
+  it('rounds up to nearest 5 within range', () => {
+    const t = Date.now();
+    const deltas = [10, 12, 15, 20, 25, 30, 40, 50, 60, 90, 120, 150];
+    const ts: number[] = [t];
+    for (const d of deltas)
+      ts.push(ts[ts.length - 1] + d * minute);
+    const gap = pickAutoGap(ts.map((x) => commit(x)));
+    assert.equal(gap % 5, 0);
+    assert.ok(gap >= 60 && gap <= 240);
   });
 });

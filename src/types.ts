@@ -2,6 +2,7 @@ export interface Options {
   allAuthors: boolean;
   allBranches: boolean;
   author?: string;
+  autoGap: boolean;
   branch?: string;
   firstCommitMinutes: number;
   gapMinutes: number;

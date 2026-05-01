@@ -1,6 +1,28 @@
 import { dateKey } from './format.ts';
 import type { CommitEntry, Options, SessionResult } from './types.ts';
 
+// Auto-pick a session gap from the commit cadence: P90 of inter-commit deltas
+// that are <= 6h (those are presumed within-session). Clamped to [60, 240]
+// minutes and rounded up to the nearest 5. Falls back to 120 when there isn't
+// enough signal.
+export function pickAutoGap(commits: CommitEntry[]): number {
+  if (commits.length < 6)
+    return 120;
+  const sorted = [...commits].sort((a, b) => a.timestamp - b.timestamp);
+  const deltas: number[] = [];
+  for (let i = 1; i < sorted.length; i++) {
+    const minutes = (sorted[i].timestamp - sorted[i - 1].timestamp) / 60_000;
+    if (minutes > 0 && minutes <= 360)
+      deltas.push(minutes);
+  }
+  if (deltas.length < 5)
+    return 120;
+  deltas.sort((a, b) => a - b);
+  const p90 = deltas[Math.floor(deltas.length * 0.9)];
+  const rounded = Math.ceil(p90 / 5) * 5;
+  return Math.max(60, Math.min(240, rounded));
+}
+
 export function estimateHours(commits: CommitEntry[], opts: Options): SessionResult {
   if (commits.length === 0) {
     return { commits: 0, firstCommit: new Date(), hours: 0, lastCommit: new Date(), sessions: 0 };

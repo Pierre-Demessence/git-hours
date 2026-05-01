@@ -1,6 +1,6 @@
 import process from 'node:process';
 import { parseArgs } from './cli.ts';
-import { computeDailyBreakdown, estimateHours } from './estimate.ts';
+import { computeDailyBreakdown, estimateHours, pickAutoGap } from './estimate.ts';
 import { formatHours } from './format.ts';
 import { getCommits } from './git.ts';
 import { printDailyBreakdown, printResult } from './print.ts';
@@ -10,12 +10,16 @@ function main(): void {
   const opts = parseArgs(process.argv.slice(2));
   const commits = getCommits(opts);
 
+  if (opts.autoGap)
+    opts.gapMinutes = pickAutoGap(commits);
+
   const dateRange = opts.since || opts.until
     ? `${opts.since ?? 'beginning'} → ${opts.until ?? 'now'}`
     : 'all time';
 
+  const gapLabel = opts.autoGap ? `${opts.gapMinutes}min (auto)` : `${opts.gapMinutes}min`;
   console.log(`\n⏱  Git Hours — ${dateRange}`);
-  console.log(`   Gap threshold: ${opts.gapMinutes}min | First-commit credit: ${opts.firstCommitMinutes}min\n`);
+  console.log(`   Gap threshold: ${gapLabel} | First-commit credit: ${opts.firstCommitMinutes}min\n`);
 
   if (opts.allAuthors) {
     const byAuthor = new Map<string, CommitEntry[]>();

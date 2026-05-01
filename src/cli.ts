@@ -51,6 +51,7 @@ export function parseArgs(argv: string[]): Options {
     .option('--last-month', 'shortcut: analyze the previous month')
     .addOption(new Option('--gap <minutes>', 'max gap between commits in a session').default(120).argParser(parsePositiveNumber('gap')))
     .addOption(new Option('--first <minutes>', 'time credited for the first commit in a session').default(30).argParser(parsePositiveNumber('first')))
+    .addOption(new Option('--auto-gap', 'auto-pick gap from commit cadence (P90 of inter-commit deltas)').conflicts('gap').default(false))
     .addOption(new Option('--author <name>', 'filter by author name (substring match)').conflicts('allAuthors'))
     .option('--all-authors', 'show per-author breakdown', false)
     .addOption(new Option('--branch <name>', 'analyze a specific branch (default: HEAD)').conflicts('allBranches'))
@@ -77,6 +78,7 @@ export function parseArgs(argv: string[]): Options {
     allAuthors: boolean;
     allBranches: boolean;
     author?: string;
+    autoGap: boolean;
     branch?: string;
     first: number;
     gap: number;
@@ -98,6 +100,7 @@ export function parseArgs(argv: string[]): Options {
     allAuthors: raw.allAuthors,
     allBranches: raw.allBranches,
     author: raw.author,
+    autoGap: raw.autoGap,
     branch: raw.branch,
     firstCommitMinutes: raw.first,
     gapMinutes: raw.gap,
