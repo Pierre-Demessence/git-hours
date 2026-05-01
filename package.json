@@ -10,7 +10,7 @@
   },
   "files": [
     "bin/",
-    "git-hours.ts"
+    "src/"
   ],
   "dependencies": {
     "commander": "^12.1.0",

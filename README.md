@@ -55,10 +55,17 @@ This is a heuristic — it's a useful approximation, not a timesheet.
 ## Project layout
 
 ```
-git-hours.ts        # CLI entry point (TypeScript)
-bin/git-hours.mjs   # Node launcher that runs the .ts file via tsx's API
-package.json        # bin = ./bin/git-hours.mjs
-tsconfig.json       # IDE/type-check config (no emit)
+src/
+  index.ts        # main() entry
+  cli.ts          # commander setup, argument parsing & validation
+  git.ts          # git log invocation
+  estimate.ts     # session math (estimateHours, computeDailyBreakdown)
+  format.ts       # date / hour / ISO-week formatting
+  print.ts        # console output
+  types.ts        # shared interfaces
+bin/git-hours.mjs # Node launcher that runs src/index.ts via tsx's API
+package.json      # bin = ./bin/git-hours.mjs
+tsconfig.json     # IDE/type-check config (no emit)
 ```
 
 The `bin/git-hours.mjs` launcher exists because npm's Windows shim doesn't handle `#!/usr/bin/env npx tsx` shebangs reliably. The launcher uses a plain `#!/usr/bin/env node` shebang and invokes `tsx`'s programmatic API to load the TypeScript entry.

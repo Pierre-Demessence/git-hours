@@ -11,5 +11,5 @@
     "noEmit": true,
     "types": ["node"]
   },
-  "include": ["git-hours.ts", "bin/**/*"]
+  "include": ["src/**/*", "bin/**/*"]
 }
