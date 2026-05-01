@@ -45,7 +45,7 @@ function main(): void {
     console.log();
   }
 
-  if (commits.length > 0 && !opts.summaryOnly) {
+  if (commits.length > 0 && opts.daily) {
     const daily = computeDailyBreakdown(commits, opts);
     printDailyBreakdown(daily);
   }

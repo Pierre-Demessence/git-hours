@@ -7,10 +7,10 @@ const baseOpts: Options = {
   allAuthors: false,
   allBranches: false,
   autoGap: false,
+  daily: false,
   firstCommitMinutes: 30,
   gapMinutes: 120,
   heatmap: false,
-  summaryOnly: false,
 };
 
 function commit(timestamp: number, author = 'a', message = 'm'): CommitEntry {
