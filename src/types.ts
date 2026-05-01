@@ -3,6 +3,7 @@ export interface Options {
   author?: string;
   firstCommitMinutes: number;
   gapMinutes: number;
+  repo?: string;
   since?: string;
   until?: string;
 }

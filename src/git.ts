@@ -17,6 +17,7 @@ export function getCommits(opts: Options): CommitEntry[] {
     raw = execFileSync('git', args, {
       encoding: 'utf-8',
       stdio: ['ignore', 'pipe', 'pipe'],
+      cwd: opts.repo,
       // Default maxBuffer is 1 MiB; large repos with thousands of commits in
       // range can blow past that and throw ENOBUFS. 64 MiB covers ~600k commits.
       maxBuffer: 64 * 1024 * 1024,
