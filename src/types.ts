@@ -22,8 +22,8 @@ export interface CommitEntry {
 
 export interface SessionResult {
   commits: number;
-  firstCommit: Date;
+  firstCommit: Date | null;
   hours: number;
-  lastCommit: Date;
+  lastCommit: Date | null;
   sessions: number;
 }

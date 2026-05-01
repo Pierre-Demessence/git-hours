@@ -25,7 +25,7 @@ export function pickAutoGap(commits: CommitEntry[]): number {
 
 export function estimateHours(commits: CommitEntry[], opts: Options): SessionResult {
   if (commits.length === 0) {
-    return { commits: 0, firstCommit: new Date(), hours: 0, lastCommit: new Date(), sessions: 0 };
+    return { commits: 0, firstCommit: null, hours: 0, lastCommit: null, sessions: 0 };
   }
 
   const sorted = [...commits].sort((a, b) => a.timestamp - b.timestamp);

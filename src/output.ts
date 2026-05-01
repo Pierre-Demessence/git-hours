@@ -4,18 +4,18 @@ import type { CommitEntry, Options, SessionResult } from './types.ts';
 
 interface JsonResult {
   commits: number;
-  firstCommit: string;
+  firstCommit: string | null;
   hours: number;
-  lastCommit: string;
+  lastCommit: string | null;
   sessions: number;
 }
 
 function toJsonResult(r: SessionResult): JsonResult {
   return {
     commits: r.commits,
-    firstCommit: r.firstCommit.toISOString(),
+    firstCommit: r.firstCommit?.toISOString() ?? null,
     hours: Number(r.hours.toFixed(4)),
-    lastCommit: r.lastCommit.toISOString(),
+    lastCommit: r.lastCommit?.toISOString() ?? null,
     sessions: r.sessions,
   };
 }

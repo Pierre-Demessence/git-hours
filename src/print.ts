@@ -17,8 +17,8 @@ export function printResult(label: string, result: SessionResult): void {
   console.log(`    Commits:      ${result.commits}`);
   console.log(`    Sessions:     ${result.sessions}`);
   console.log(`    Total time:   ${formatHours(result.hours)}`);
-  console.log(`    First commit: ${result.firstCommit.toLocaleString()}`);
-  console.log(`    Last commit:  ${result.lastCommit.toLocaleString()}`);
+  console.log(`    First commit: ${result.firstCommit?.toLocaleString() ?? '—'}`);
+  console.log(`    Last commit:  ${result.lastCommit?.toLocaleString() ?? '—'}`);
 }
 
 export function printDailyBreakdown(daily: Map<string, SessionResult>): void {
