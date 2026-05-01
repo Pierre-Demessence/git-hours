@@ -16,7 +16,7 @@ const baseOpts: Options = {
 };
 
 function commit(timestamp: number, author = 'a', message = 'm'): CommitEntry {
-  return { author, message, timestamp };
+  return { author, email: `${author}@example.com`, message, timestamp };
 }
 
 describe('estimateHours', () => {

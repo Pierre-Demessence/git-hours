@@ -18,6 +18,7 @@ export interface Options {
 
 export interface CommitEntry {
   author: string;
+  email: string;
   message: string;
   timestamp: number;
 }

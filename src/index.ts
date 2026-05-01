@@ -35,9 +35,10 @@ function main(): void {
   if (opts.allAuthors) {
     const byAuthor = new Map<string, CommitEntry[]>();
     for (const c of commits) {
-      const list = byAuthor.get(c.author) ?? [];
+      const key = `${c.author} <${c.email}>`;
+      const list = byAuthor.get(key) ?? [];
       list.push(c);
-      byAuthor.set(c.author, list);
+      byAuthor.set(key, list);
     }
 
     let grandTotal = 0;
