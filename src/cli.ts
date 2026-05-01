@@ -53,6 +53,7 @@ export function parseArgs(argv: string[]): Options {
     .addOption(new Option('--first <minutes>', 'time credited for the first commit in a session').default(30).argParser(parsePositiveNumber('first')))
     .addOption(new Option('--author <name>', 'filter by author name (substring match)').conflicts('allAuthors'))
     .option('--all-authors', 'show per-author breakdown', false)
+    .option('--summary-only', 'skip the per-day breakdown', false)
     .option('--repo <path>', 'path to git repository (default: current directory)')
     .addHelpText('after', '\nExamples:\n  git-hours --month 2025-03\n  git-hours --since 2025-03-01 --until 2025-04-01\n  git-hours --week 2025-03-24\n  git-hours --this-week\n  git-hours --last-month\n  git-hours --gap 90 --first 20\n  git-hours --repo ../other-repo\n')
     .configureOutput({ writeErr: () => {} })
@@ -80,6 +81,7 @@ export function parseArgs(argv: string[]): Options {
     month?: string;
     repo?: string;
     since?: string;
+    summaryOnly: boolean;
     thisMonth?: boolean;
     thisWeek?: boolean;
     today?: boolean;
@@ -95,6 +97,7 @@ export function parseArgs(argv: string[]): Options {
     gapMinutes: raw.gap,
     repo: raw.repo,
     since: raw.since,
+    summaryOnly: raw.summaryOnly,
     until: raw.until,
   };
 

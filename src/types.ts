@@ -5,6 +5,7 @@ export interface Options {
   gapMinutes: number;
   repo?: string;
   since?: string;
+  summaryOnly: boolean;
   until?: string;
 }
 
