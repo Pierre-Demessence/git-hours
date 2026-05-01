@@ -4,19 +4,19 @@ import { dateKey, dayName, formatHours, isoWeekNumber } from '../src/format.ts';
 
 describe('formatHours', () => {
   it('formats whole hours', () => {
-    assert.equal(formatHours(2), '2h 0m');
+    assert.equal(formatHours(2), '02h 00m');
   });
 
   it('formats fractional hours', () => {
-    assert.equal(formatHours(1.5), '1h 30m');
+    assert.equal(formatHours(1.5), '01h 30m');
   });
 
   it('rounds minutes', () => {
-    assert.equal(formatHours(0.51), '0h 31m');
+    assert.equal(formatHours(0.51), '00h 31m');
   });
 
   it('handles zero', () => {
-    assert.equal(formatHours(0), '0h 0m');
+    assert.equal(formatHours(0), '00h 00m');
   });
 });
 
