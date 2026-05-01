@@ -41,8 +41,10 @@ function main(): void {
     }
 
     let grandTotal = 0;
-    for (const [author, authorCommits] of [...byAuthor.entries()].sort((a, b) => a[0].localeCompare(b[0]))) {
-      const result = estimateHours(authorCommits, opts);
+    const ranked = [...byAuthor.entries()]
+      .map(([author, authorCommits]) => ({ author, result: estimateHours(authorCommits, opts) }))
+      .sort((a, b) => b.result.hours - a.result.hours);
+    for (const { author, result } of ranked) {
       printResult(author, result);
       grandTotal += result.hours;
       console.log();
