@@ -8,7 +8,16 @@ Estimate work time from git commit history. Groups commits into sessions based o
 npm install -g .
 ```
 
-This installs `git-hours` as a global command. The CLI is written in TypeScript and runs through [`tsx`](https://github.com/privatenumber/tsx) at execution time — no build step.
+This installs `git-hours` as a global command. The TypeScript source is bundled to `dist/index.js` by [tsup](https://tsup.egoist.dev/); the bundle is the only thing shipped at install time.
+
+### Local development
+
+```sh
+npm install        # installs deps and runs the build (via the `prepare` script)
+npm run build      # rebuild dist/ after changes
+```
+
+On first install, `npm install -g .` symlinks the global package back to this repo, so subsequent `npm run build` runs are picked up by the global command without needing to reinstall.
 
 ## Usage
 
@@ -57,7 +66,7 @@ git-hours --all-authors
 npm test
 ```
 
-Runs Node's built-in test runner via `tsx`. Tests cover the pure functions in `src/format.ts` and `src/estimate.ts`.
+Runs Node's built-in test runner via `tsx` (used as a dev-time TS loader; not a runtime dependency). Tests cover the pure functions in `src/format.ts` and `src/estimate.ts`.
 
 ## How the estimate works
 For each ordered sequence of commits:
@@ -75,13 +84,15 @@ src/
   index.ts        # main() entry
   cli.ts          # commander setup, argument parsing & validation
   git.ts          # git log invocation
-  estimate.ts     # session math (estimateHours, computeDailyBreakdown)
+  estimate.ts     # session math (estimateHours, computeDailyBreakdown, pickAutoGap)
   format.ts       # date / hour / ISO-week formatting
-  print.ts        # console output
+  heatmap.ts      # day-of-week × hour-of-day grid
+  output.ts       # JSON / CSV emitters
+  print.ts        # human text output
   types.ts        # shared interfaces
-bin/git-hours.mjs # Node launcher that runs src/index.ts via tsx's API
-package.json      # bin = ./bin/git-hours.mjs
+tests/            # node:test unit tests
+tsup.config.ts    # build configuration
+package.json      # bin = ./dist/index.js, prepare script runs tsup
 tsconfig.json     # IDE/type-check config (no emit)
+dist/             # generated bundle (gitignored)
 ```
-
-The `bin/git-hours.mjs` launcher exists because npm's Windows shim doesn't handle `#!/usr/bin/env npx tsx` shebangs reliably. The launcher uses a plain `#!/usr/bin/env node` shebang and invokes `tsx`'s programmatic API to load the TypeScript entry.
