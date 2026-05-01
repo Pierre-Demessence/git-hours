@@ -3,7 +3,10 @@ import process from 'node:process';
 import type { CommitEntry, Options } from './types.ts';
 
 export function getCommits(opts: Options): CommitEntry[] {
-  const args = ['log', '--format=%at|%an|%s', '--no-merges'];
+  // ASCII Unit Separator (0x1F) avoids collisions with `|` or other punctuation
+  // that may legitimately appear in author names or commit subjects.
+  const FS = '\x1f';
+  const args = ['log', `--format=%at${FS}%an${FS}%s`, '--no-merges'];
 
   if (opts.since)
     args.push(`--since=${opts.since}`);
@@ -46,10 +49,10 @@ export function getCommits(opts: Options): CommitEntry[] {
     return [];
 
   return raw.split('\n').map((line) => {
-    const [ts, author, ...msgParts] = line.split('|');
+    const [ts, author, ...msgParts] = line.split(FS);
     return {
       author,
-      message: msgParts.join('|'),
+      message: msgParts.join(FS),
       timestamp: Number(ts) * 1000,
     };
   });
