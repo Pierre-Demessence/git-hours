@@ -26,6 +26,9 @@ git-hours [options]
 | `--until <date>` | End date (ISO, e.g. `2025-04-01`) |
 | `--month <YYYY-MM>` | Shortcut: analyze a specific month |
 | `--week <YYYY-MM-DD>` | Shortcut: analyze the week starting on that date |
+| `--today` / `--yesterday` | Shortcut: analyze today or yesterday |
+| `--this-week` / `--last-week` | Shortcut: analyze the current or previous week (Monday-based) |
+| `--this-month` / `--last-month` | Shortcut: analyze the current or previous month |
 | `--gap <minutes>` | Max gap between commits in a session (default: `120`) |
 | `--first <minutes>` | Time credited for the first commit in a session (default: `30`) |
 | `--author <name>` | Filter by author name (substring match) |
