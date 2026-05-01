@@ -1,0 +1,18 @@
+{
+  "name": "git-hours",
+  "version": "1.0.0",
+  "private": true,
+  "bin": {
+    "git-hours": "./bin/git-hours.mjs"
+  },
+  "files": [
+    "bin/",
+    "git-hours.ts"
+  ],
+  "dependencies": {
+    "tsx": "^4.x"
+  },
+  "devDependencies": {
+    "@types/node": "^25.6.0"
+  }
+}
