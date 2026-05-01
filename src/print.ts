@@ -1,6 +1,13 @@
 import { dayName, formatHours, isoWeekNumber } from './format.ts';
 import type { SessionResult } from './types.ts';
 
+// Zero-padded fixed-width duration for tabular layout (e.g. `04h 09m`).
+function formatHoursPadded(hours: number): string {
+  const h = Math.floor(hours);
+  const m = Math.round((hours - h) * 60);
+  return `${String(h).padStart(2, '0')}h ${String(m).padStart(2, '0')}m`;
+}
+
 export function printResult(label: string, result: SessionResult): void {
   if (result.commits === 0) {
     console.log(`  ${label}: No commits found`);
@@ -21,8 +28,8 @@ export function printDailyBreakdown(daily: Map<string, SessionResult>): void {
   const maxHours = Math.max(...sorted.map(([, r]) => r.hours));
 
   console.log('  Daily breakdown:');
-  console.log(`  ${'Date'.padEnd(12)} ${'Day'.padEnd(4)} ${'Time'.padEnd(8)} ${'Commits'.padEnd(8)} ${'Bar'}`);
-  console.log(`  ${'─'.repeat(12)} ${'─'.repeat(4)} ${'─'.repeat(8)} ${'─'.repeat(8)} ${'─'.repeat(30)}`);
+  console.log(`  ${'Date'.padEnd(12)} ${'Day'.padEnd(4)} ${'Time'.padStart(7)} ${'Commits'.padStart(8)} ${'Bar'}`);
+  console.log(`  ${'─'.repeat(12)} ${'─'.repeat(4)} ${'─'.repeat(7)} ${'─'.repeat(8)} ${'─'.repeat(30)}`);
 
   let currentWeek = '';
   let weekHours = 0;
@@ -31,7 +38,7 @@ export function printDailyBreakdown(daily: Map<string, SessionResult>): void {
   const flushWeek = () => {
     if (currentWeek) {
       console.log(
-        `  ${`  ${currentWeek} subtotal`.padEnd(17)} ${formatHours(weekHours).padEnd(8)} ${String(weekCommits).padEnd(8)}`,
+        `  ${`  ${currentWeek} subtotal`.padEnd(17)} ${formatHoursPadded(weekHours).padStart(7)} ${String(weekCommits).padStart(8)}`,
       );
       console.log();
     }
@@ -52,7 +59,7 @@ export function printDailyBreakdown(daily: Map<string, SessionResult>): void {
     const barLen = maxHours > 0 ? Math.round((result.hours / maxHours) * 28) : 0;
     const bar = '█'.repeat(barLen);
     console.log(
-      `  ${day.padEnd(12)} ${dayName(day).padEnd(4)} ${formatHours(result.hours).padEnd(8)} ${String(result.commits).padEnd(8)} ${bar}`,
+      `  ${day.padEnd(12)} ${dayName(day).padEnd(4)} ${formatHoursPadded(result.hours).padStart(7)} ${String(result.commits).padStart(8)} ${bar}`,
     );
   }
   flushWeek();
