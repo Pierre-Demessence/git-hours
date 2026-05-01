@@ -42,8 +42,15 @@ git-hours --gap 90 --first 20
 git-hours --all-authors
 ```
 
-## How the estimate works
+## Tests
 
+```sh
+npm test
+```
+
+Runs Node's built-in test runner via `tsx`. Tests cover the pure functions in `src/format.ts` and `src/estimate.ts`.
+
+## How the estimate works
 For each ordered sequence of commits:
 
 - The first commit of a session is credited `--first` minutes (default 30).
