@@ -10,6 +10,7 @@
     "git-hours.ts"
   ],
   "dependencies": {
+    "commander": "^12.1.0",
     "tsx": "^4.x"
   },
   "devDependencies": {

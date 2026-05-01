@@ -2,28 +2,10 @@
  * Estimate work time from git commit history.
  * Groups commits into sessions based on a max gap threshold,
  * then sums total estimated hours.
- *
- * Usage:
- *   npx --yes tsx scripts/git-hours.ts [options]
- *
- * Options:
- *   --since <date>       Start date (ISO, or shortcuts like "2025-03-01")
- *   --until <date>       End date (ISO, or shortcuts like "2025-04-01")
- *   --month <YYYY-MM>    Shortcut: analyze a specific month (e.g. "2025-03")
- *   --week <YYYY-MM-DD>  Shortcut: analyze the week starting on that Monday
- *   --gap <minutes>      Max gap between commits in a session (default: 120)
- *   --first <minutes>    Time credited for the first commit in a session (default: 30)
- *   --author <name>      Filter by author name (substring match)
- *   --all-authors        Show per-author breakdown
- *
- * Examples:
- *   npx --yes tsx scripts/git-hours.ts --month 2025-03
- *   npx --yes tsx scripts/git-hours.ts --since 2025-03-01 --until 2025-04-01
- *   npx --yes tsx scripts/git-hours.ts --week 2025-03-24
- *   npx --yes tsx scripts/git-hours.ts --gap 90 --first 20
  */
 import { execFileSync } from 'node:child_process';
 import process from 'node:process';
+import { Command, Option } from 'commander';
 
 interface Options {
   allAuthors: boolean;
@@ -49,58 +31,53 @@ interface SessionResult {
 }
 
 function parseArgs(argv: string[]): Options {
+  const program = new Command()
+    .name('git-hours')
+    .description('Estimate work time from git commit history')
+    .option('--since <date>', 'start date (ISO, e.g. 2025-03-01)')
+    .option('--until <date>', 'end date (ISO, e.g. 2025-04-01)')
+    .option('--month <YYYY-MM>', 'shortcut: analyze a specific month')
+    .option('--week <YYYY-MM-DD>', 'shortcut: analyze the week starting on that date')
+    .addOption(new Option('--gap <minutes>', 'max gap between commits in a session').default(120).argParser(Number))
+    .addOption(new Option('--first <minutes>', 'time credited for the first commit in a session').default(30).argParser(Number))
+    .option('--author <name>', 'filter by author name (substring match)')
+    .option('--all-authors', 'show per-author breakdown', false)
+    .addHelpText('after', '\nExamples:\n  git-hours --month 2025-03\n  git-hours --since 2025-03-01 --until 2025-04-01\n  git-hours --week 2025-03-24\n  git-hours --gap 90 --first 20\n')
+    .parse(argv, { from: 'user' });
+
+  const raw = program.opts<{
+    allAuthors: boolean;
+    author?: string;
+    first: number;
+    gap: number;
+    month?: string;
+    since?: string;
+    until?: string;
+    week?: string;
+  }>();
+
   const opts: Options = {
-    allAuthors: false,
-    firstCommitMinutes: 30,
-    gapMinutes: 120,
+    allAuthors: raw.allAuthors,
+    author: raw.author,
+    firstCommitMinutes: raw.first,
+    gapMinutes: raw.gap,
+    since: raw.since,
+    until: raw.until,
   };
 
-  for (let i = 0; i < argv.length; i++) {
-    const arg = argv[i];
-    const next = argv[i + 1];
+  if (raw.month) {
+    const [year, month] = raw.month.split('-').map(Number);
+    opts.since = new Date(year, month - 1, 1).toISOString();
+    const nextMonth = month === 12 ? new Date(year + 1, 0, 1) : new Date(year, month, 1);
+    opts.until = nextMonth.toISOString();
+  }
 
-    switch (arg) {
-      case '--since':
-        opts.since = next;
-        i++;
-        break;
-      case '--until':
-        opts.until = next;
-        i++;
-        break;
-      case '--month': {
-        const [year, month] = next.split('-').map(Number);
-        opts.since = new Date(year, month - 1, 1).toISOString();
-        const nextMonth = month === 12 ? new Date(year + 1, 0, 1) : new Date(year, month, 1);
-        opts.until = nextMonth.toISOString();
-        i++;
-        break;
-      }
-      case '--week': {
-        const start = new Date(next);
-        const end = new Date(start);
-        end.setDate(end.getDate() + 7);
-        opts.since = start.toISOString();
-        opts.until = end.toISOString();
-        i++;
-        break;
-      }
-      case '--gap':
-        opts.gapMinutes = Number(next);
-        i++;
-        break;
-      case '--first':
-        opts.firstCommitMinutes = Number(next);
-        i++;
-        break;
-      case '--author':
-        opts.author = next;
-        i++;
-        break;
-      case '--all-authors':
-        opts.allAuthors = true;
-        break;
-    }
+  if (raw.week) {
+    const start = new Date(raw.week);
+    const end = new Date(start);
+    end.setDate(end.getDate() + 7);
+    opts.since = start.toISOString();
+    opts.until = end.toISOString();
   }
 
   return opts;
