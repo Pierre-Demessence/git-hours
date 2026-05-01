@@ -74,6 +74,10 @@ function parseArgs(argv: string[]): Options {
 
   if (raw.week) {
     const start = new Date(raw.week);
+    // Snap to the Monday of that ISO week (getDay(): 0=Sun..6=Sat).
+    const dayOfWeek = start.getDay();
+    const offsetToMonday = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+    start.setDate(start.getDate() + offsetToMonday);
     const end = new Date(start);
     end.setDate(end.getDate() + 7);
     opts.since = start.toISOString();
@@ -190,10 +194,16 @@ function computeDailyBreakdown(commits: CommitEntry[], opts: Options): Map<strin
 }
 
 function isoWeekNumber(dateStr: string): string {
+  // ISO 8601: weeks start Monday; week 1 contains the first Thursday.
+  // Algorithm: shift to the Thursday of the same week, then count weeks from
+  // the year-start Thursday.
   const d = new Date(dateStr);
-  const start = new Date(d.getFullYear(), 0, 1);
-  const dayOfYear = Math.floor((d.getTime() - start.getTime()) / 86_400_000) + 1;
-  const weekNum = Math.ceil((dayOfYear + start.getDay()) / 7);
+  d.setHours(0, 0, 0, 0);
+  const dayNum = (d.getDay() + 6) % 7;
+  d.setDate(d.getDate() - dayNum + 3);
+  const firstThursday = new Date(d.getFullYear(), 0, 4);
+  const diffDays = (d.getTime() - firstThursday.getTime()) / 86_400_000;
+  const weekNum = 1 + Math.round((diffDays - 3 + ((firstThursday.getDay() + 6) % 7)) / 7);
   return `W${String(weekNum).padStart(2, '0')}`;
 }
 
