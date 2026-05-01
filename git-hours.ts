@@ -93,7 +93,25 @@ function getCommits(opts: Options): CommitEntry[] {
   if (opts.author)
     args.push(`--author=${opts.author}`);
 
-  const raw = execFileSync('git', args, { encoding: 'utf-8' }).trim();
+  let raw: string;
+  try {
+    raw = execFileSync('git', args, { encoding: 'utf-8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+  }
+  catch (err) {
+    const stderr = (err as { stderr?: Buffer | string }).stderr;
+    const message = typeof stderr === 'string' ? stderr : stderr?.toString() ?? (err as Error).message;
+    if (/not a git repository/i.test(message)) {
+      console.error('git-hours: not a git repository (run from inside a repo).');
+    }
+    else if (/does not have any commits yet/i.test(message)) {
+      console.error('git-hours: this repository has no commits yet.');
+    }
+    else {
+      console.error(`git-hours: failed to read git log: ${message.trim()}`);
+    }
+    process.exit(1);
+  }
+
   if (!raw)
     return [];
 
