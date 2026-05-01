@@ -1,7 +1,7 @@
+import type { Options } from './types.ts';
 import process from 'node:process';
 import { Command, Option } from 'commander';
 import pkg from '../package.json' with { type: 'json' };
-import type { Options } from './types.ts';
 
 function parsePositiveNumber(name: string) {
   return (value: string): number => {

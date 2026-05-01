@@ -1,7 +1,7 @@
+import type { CommitEntry, Options } from '../src/types.ts';
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { buildJsonPayload, formatCsv } from '../src/output.ts';
-import type { CommitEntry, Options } from '../src/types.ts';
 
 const baseOpts: Options = {
   allAuthors: false,

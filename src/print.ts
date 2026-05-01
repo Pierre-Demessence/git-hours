@@ -1,5 +1,5 @@
-import { dayName, formatHours, isoWeekNumber } from './format.ts';
 import type { SessionResult } from './types.ts';
+import { dayName, formatHours, isoWeekNumber } from './format.ts';
 
 export function printResult(label: string, result: SessionResult): void {
   if (result.commits === 0) {

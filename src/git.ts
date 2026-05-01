@@ -1,10 +1,11 @@
+import type { Buffer } from 'node:buffer';
+import type { CommitEntry, Options } from './types.ts';
 import { execFileSync } from 'node:child_process';
 import process from 'node:process';
-import type { CommitEntry, Options } from './types.ts';
 
 // ASCII Unit Separator (0x1F) avoids collisions with `|` or other punctuation
 // that may legitimately appear in author names or commit subjects.
-const FS = '\x1f';
+const FS = '\x1F';
 
 export function parseLogOutput(raw: string): CommitEntry[] {
   if (!raw)

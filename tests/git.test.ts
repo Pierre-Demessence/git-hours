@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { applyExcludeAuthors, parseLogOutput } from '../src/git.ts';
 
-const FS = '\x1f';
+const FS = '\x1F';
 
 describe('parseLogOutput', () => {
   it('returns empty array for empty input', () => {
@@ -56,13 +56,13 @@ describe('applyExcludeAuthors', () => {
   it('matches author name substring case-insensitively', () => {
     const out = applyExcludeAuthors(commits, ['ALICE']);
     assert.equal(out.length, 2);
-    assert.ok(!out.find(c => c.author === 'Alice'));
+    assert.ok(!out.some(c => c.author === 'Alice'));
   });
 
   it('matches email substring (e.g. bot domain)', () => {
     const out = applyExcludeAuthors(commits, ['noreply@github.com']);
     assert.equal(out.length, 2);
-    assert.ok(!out.find(c => c.author === 'dependabot[bot]'));
+    assert.ok(!out.some(c => c.author === 'dependabot[bot]'));
   });
 
   it('combines multiple patterns', () => {

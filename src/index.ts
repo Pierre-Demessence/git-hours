@@ -1,3 +1,4 @@
+import type { CommitEntry } from './types.ts';
 import process from 'node:process';
 import { parseArgs } from './cli.ts';
 import { computeDailyBreakdown, estimateHours, pickAutoGap } from './estimate.ts';
@@ -6,7 +7,6 @@ import { getCommits } from './git.ts';
 import { printHeatmap } from './heatmap.ts';
 import { printCsv, printJson } from './output.ts';
 import { printDailyBreakdown, printResult } from './print.ts';
-import type { CommitEntry } from './types.ts';
 
 function main(): void {
   const opts = parseArgs(process.argv.slice(2));

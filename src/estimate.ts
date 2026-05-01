@@ -1,5 +1,5 @@
-import { dateKey } from './format.ts';
 import type { CommitEntry, Options, SessionResult } from './types.ts';
+import { dateKey } from './format.ts';
 
 // Auto-pick a session gap from the commit cadence: P90 of inter-commit deltas
 // that are <= 6h (those are presumed within-session). Clamped to [60, 240]

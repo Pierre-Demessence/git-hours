@@ -39,7 +39,9 @@ git-hours [options]
 | `--this-week` / `--last-week` | Shortcut: analyze the current or previous week (Monday-based) |
 | `--this-month` / `--last-month` | Shortcut: analyze the current or previous month |
 | `--gap <minutes>` | Max gap between commits in a session (default: `120`) |
-| `--first <minutes>` | Time credited for the first commit in a session (default: `30`) || `--auto-gap` | Auto-pick gap from commit cadence (P90 of inter-commit deltas ≤ 6h, clamped to 60–240) || `--author <name>` | Filter by author name (substring match) |
+| `--first <minutes>` | Time credited for the first commit in a session (default: `30`) |
+| `--auto-gap` | Auto-pick gap from commit cadence (P90 of inter-commit deltas ≤ 6h, clamped to 60–240) |
+| `--author <name>` | Filter by author name (substring match) |
 | `--all-authors` | Show per-author breakdown |
 | `--exclude-author <name...>` | Exclude commits by author (repeatable, substring match) |
 | `--top <n>` | Limit `--all-authors` to the top N authors by hours |

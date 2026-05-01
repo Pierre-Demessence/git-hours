@@ -1,7 +1,7 @@
+import type { CommitEntry, Options, SessionResult } from './types.ts';
 import process from 'node:process';
 import { computeDailyBreakdown, estimateHours } from './estimate.ts';
 import { dayName, isoWeekNumber } from './format.ts';
-import type { CommitEntry, Options, SessionResult } from './types.ts';
 
 interface JsonResult {
   commits: number;

@@ -1,7 +1,7 @@
+import type { CommitEntry, Options } from '../src/types.ts';
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { computeDailyBreakdown, estimateHours, pickAutoGap } from '../src/estimate.ts';
-import type { CommitEntry, Options } from '../src/types.ts';
 
 const baseOpts: Options = {
   allAuthors: false,
@@ -88,7 +88,7 @@ describe('pickAutoGap', () => {
   it('falls back to 120 when too few within-session deltas', () => {
     const t = Date.now();
     const day = 24 * 60 * minute;
-    assert.equal(pickAutoGap([0, 1, 2, 3, 4, 5].map((i) => commit(t + i * day))), 120);
+    assert.equal(pickAutoGap([0, 1, 2, 3, 4, 5].map(i => commit(t + i * day))), 120);
   });
 
   it('clamps below 60', () => {
@@ -109,7 +109,7 @@ describe('pickAutoGap', () => {
     const ts: number[] = [t];
     for (const d of deltas)
       ts.push(ts[ts.length - 1] + d * minute);
-    const gap = pickAutoGap(ts.map((x) => commit(x)));
+    const gap = pickAutoGap(ts.map(x => commit(x)));
     assert.equal(gap % 5, 0);
     assert.ok(gap >= 60 && gap <= 240);
   });

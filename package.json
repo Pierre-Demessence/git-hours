@@ -1,5 +1,6 @@
 {
   "name": "git-hours",
+  "type": "module",
   "version": "1.0.0",
   "private": true,
   "description": "Estimate work time from git commit history.",
@@ -9,26 +10,29 @@
     "type": "git",
     "url": "git+https://github.com/Pierre-Demessence/git-hours.git"
   },
-  "type": "module",
-  "engines": {
-    "node": ">=20"
-  },
-  "scripts": {
-    "build": "tsup",
-    "prepare": "npm run build",
-    "test": "tsx --test tests/*.test.ts"
-  },
   "bin": {
     "git-hours": "./dist/index.js"
   },
   "files": [
     "dist/"
   ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsup",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "prepare": "npm run build",
+    "test": "tsx --test tests/*.test.ts"
+  },
   "dependencies": {
     "commander": "^12.1.0"
   },
   "devDependencies": {
+    "@antfu/eslint-config": "^8.2.0",
     "@types/node": "^25.6.0",
+    "eslint": "^10.2.1",
     "tsup": "^8.3.5",
     "tsx": "^4.20.0",
     "typescript": "^6.0.3"
