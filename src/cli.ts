@@ -58,6 +58,8 @@ export function parseArgs(argv: string[]): Options {
     .option('--all-branches', 'analyze commits reachable from any ref', false)
     .option('--daily', 'include the per-day breakdown', false)
     .option('--heatmap', 'print a 7×24 hour-of-day × day-of-week heatmap', false)
+    .addOption(new Option('--json', 'output JSON instead of text').conflicts('csv').default(false))
+    .addOption(new Option('--csv', 'output daily breakdown as CSV (implies --daily)').conflicts('json').default(false))
     .option('--repo <path>', 'path to git repository (default: current directory)')
     .addHelpText('after', '\nExamples:\n  git-hours --month 2025-03\n  git-hours --since 2025-03-01 --until 2025-04-01\n  git-hours --week 2025-03-24\n  git-hours --this-week\n  git-hours --last-month\n  git-hours --gap 90 --first 20\n  git-hours --repo ../other-repo\n')
     .configureOutput({ writeErr: () => {} })
@@ -81,10 +83,12 @@ export function parseArgs(argv: string[]): Options {
     author?: string;
     autoGap: boolean;
     branch?: string;
+    csv: boolean;
     daily: boolean;
     first: number;
     gap: number;
     heatmap: boolean;
+    json: boolean;
     lastMonth?: boolean;
     lastWeek?: boolean;
     month?: string;
@@ -104,8 +108,9 @@ export function parseArgs(argv: string[]): Options {
     author: raw.author,
     autoGap: raw.autoGap,
     branch: raw.branch,
-    daily: raw.daily,
+    daily: raw.daily || raw.csv,
     firstCommitMinutes: raw.first,
+    format: raw.json ? 'json' : raw.csv ? 'csv' : 'text',
     gapMinutes: raw.gap,
     heatmap: raw.heatmap,
     repo: raw.repo,

@@ -4,6 +4,7 @@ import { computeDailyBreakdown, estimateHours, pickAutoGap } from './estimate.ts
 import { formatHours } from './format.ts';
 import { getCommits } from './git.ts';
 import { printHeatmap } from './heatmap.ts';
+import { printCsv, printJson } from './output.ts';
 import { printDailyBreakdown, printResult } from './print.ts';
 import type { CommitEntry } from './types.ts';
 
@@ -13,6 +14,15 @@ function main(): void {
 
   if (opts.autoGap)
     opts.gapMinutes = pickAutoGap(commits);
+
+  if (opts.format === 'json') {
+    printJson(commits, opts);
+    return;
+  }
+  if (opts.format === 'csv') {
+    printCsv(commits, opts);
+    return;
+  }
 
   const dateRange = opts.since || opts.until
     ? `${opts.since ?? 'beginning'} → ${opts.until ?? 'now'}`

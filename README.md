@@ -36,6 +36,8 @@ git-hours [options]
 | `--all-branches` | Analyze commits reachable from any ref |
 | `--daily` | Include the per-day breakdown (off by default) |
 | `--heatmap` | Print a 7×24 hour-of-day × day-of-week heatmap |
+| `--json` | Emit machine-readable JSON instead of human text |
+| `--csv` | Emit the daily breakdown as CSV (implies `--daily`) |
 | `--repo <path>` | Path to git repository (default: current directory) |
 | `-h`, `--help` | Show help |
 

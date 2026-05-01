@@ -9,6 +9,7 @@ const baseOpts: Options = {
   autoGap: false,
   daily: false,
   firstCommitMinutes: 30,
+  format: 'text',
   gapMinutes: 120,
   heatmap: false,
 };

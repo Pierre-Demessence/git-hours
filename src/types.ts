@@ -6,6 +6,7 @@ export interface Options {
   branch?: string;
   daily: boolean;
   firstCommitMinutes: number;
+  format: 'text' | 'json' | 'csv';
   gapMinutes: number;
   heatmap: boolean;
   repo?: string;
