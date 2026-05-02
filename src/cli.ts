@@ -1,4 +1,6 @@
 import type { Options } from './types.ts';
+import { existsSync, statSync } from 'node:fs';
+import { join, resolve } from 'node:path';
 import process from 'node:process';
 import { Command, Option } from 'commander';
 import pkg from '../package.json' with { type: 'json' };
@@ -17,6 +19,24 @@ function validateIsoDate(value: string, flag: string): void {
   const t = Date.parse(value);
   if (Number.isNaN(t)) {
     console.error(`git-hours: --${flag} must be a valid date, got "${value}"`);
+    process.exit(2);
+  }
+}
+
+function validateRepoPath(repo: string): void {
+  const abs = resolve(repo);
+  if (!existsSync(abs)) {
+    console.error(`git-hours: --repo path does not exist: ${repo}`);
+    process.exit(2);
+  }
+  if (!statSync(abs).isDirectory()) {
+    console.error(`git-hours: --repo path is not a directory: ${repo}`);
+    process.exit(2);
+  }
+  // `.git` is a directory in normal repos, but a regular file in worktrees,
+  // submodules, and bare-via-gitfile setups — both are valid here.
+  if (!existsSync(join(abs, '.git'))) {
+    console.error(`git-hours: --repo is not a git repository (no .git found): ${repo}`);
     process.exit(2);
   }
 }
@@ -141,6 +161,9 @@ export function parseArgs(argv: string[]): Options {
       process.exit(2);
     }
   }
+
+  if (opts.repo !== undefined)
+    validateRepoPath(opts.repo);
 
   if (raw.since)
     validateIsoDate(raw.since, 'since');
