@@ -52,6 +52,7 @@ git-hours [options]
 | `--json` | Emit machine-readable JSON instead of human text |
 | `--csv` | Emit the daily breakdown as CSV (implies `--daily`) |
 | `--repo <path>` | Path to git repository (default: current directory) |
+| `--compare <ref>` | Compare against another window: token (`last-month`, `last-week`, `this-month`, `this-week`, `today`, `yesterday`), `YYYY-MM`, or `YYYY-MM-DD..YYYY-MM-DD` |
 | `-h`, `--help` | Show help |
 | `-v`, `--version` | Show the version |
 

@@ -4,6 +4,7 @@ export interface Options {
   author?: string;
   autoGap: boolean;
   branch?: string;
+  compare?: { since: string; until: string; label: string };
   daily: boolean;
   excludeAuthor: string[];
   firstCommitMinutes: number;

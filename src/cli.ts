@@ -56,6 +56,81 @@ function startOfMonth(d: Date): Date {
   return new Date(d.getFullYear(), d.getMonth(), 1);
 }
 
+type Shortcut = 'today' | 'yesterday' | 'this-week' | 'last-week' | 'this-month' | 'last-month';
+
+function resolveShortcut(name: Shortcut, now: Date = new Date()): { since: Date; until: Date } {
+  let since: Date;
+  let until: Date;
+  switch (name) {
+    case 'today':
+      since = startOfDay(now);
+      until = new Date(since);
+      until.setDate(until.getDate() + 1);
+      break;
+    case 'yesterday':
+      until = startOfDay(now);
+      since = new Date(until);
+      since.setDate(since.getDate() - 1);
+      break;
+    case 'this-week':
+      since = startOfWeek(now);
+      until = new Date(since);
+      until.setDate(until.getDate() + 7);
+      break;
+    case 'last-week':
+      until = startOfWeek(now);
+      since = new Date(until);
+      since.setDate(since.getDate() - 7);
+      break;
+    case 'this-month':
+      since = startOfMonth(now);
+      until = new Date(since.getFullYear(), since.getMonth() + 1, 1);
+      break;
+    case 'last-month':
+      until = startOfMonth(now);
+      since = new Date(until.getFullYear(), until.getMonth() - 1, 1);
+      break;
+  }
+  return { since, until };
+}
+
+const COMPARE_TOKENS: readonly Shortcut[] = ['today', 'yesterday', 'this-week', 'last-week', 'this-month', 'last-month'];
+
+export interface DateWindow {
+  since: string;
+  until: string;
+  label: string;
+}
+
+export function resolveCompareRef(ref: string): DateWindow {
+  if ((COMPARE_TOKENS as readonly string[]).includes(ref)) {
+    const { since, until } = resolveShortcut(ref as Shortcut);
+    return { since: since.toISOString(), until: until.toISOString(), label: ref };
+  }
+  // YYYY-MM (whole month)
+  if (/^\d{4}-\d{2}$/.test(ref)) {
+    const [y, m] = ref.split('-').map(Number);
+    if (m < 1 || m > 12)
+      throw new Error(`--compare month must be between 01 and 12, got "${ref}"`);
+    const since = new Date(y, m - 1, 1);
+    const until = m === 12 ? new Date(y + 1, 0, 1) : new Date(y, m, 1);
+    return { since: since.toISOString(), until: until.toISOString(), label: ref };
+  }
+  // YYYY-MM-DD..YYYY-MM-DD (explicit range, end-exclusive)
+  const rangeMatch = ref.match(/^(\d{4}-\d{2}-\d{2})\.\.(\d{4}-\d{2}-\d{2})$/);
+  if (rangeMatch) {
+    const [, a, b] = rangeMatch;
+    const ta = Date.parse(a);
+    const tb = Date.parse(b);
+    if (Number.isNaN(ta) || Number.isNaN(tb))
+      throw new Error(`--compare range has invalid date: "${ref}"`);
+    if (ta >= tb)
+      throw new Error(`--compare range start must be before end: "${ref}"`);
+    return { since: new Date(ta).toISOString(), until: new Date(tb).toISOString(), label: ref };
+  }
+  throw new Error(`--compare: unrecognized ref "${ref}". Expected one of: ${COMPARE_TOKENS.join(', ')}, YYYY-MM, or YYYY-MM-DD..YYYY-MM-DD`);
+}
+
 export function parseArgs(argv: string[]): Options {
   const program = new Command()
     .name('git-hours')
@@ -85,6 +160,7 @@ export function parseArgs(argv: string[]): Options {
     .addOption(new Option('--json', 'output JSON instead of text').conflicts('csv').default(false))
     .addOption(new Option('--csv', 'output daily breakdown as CSV (implies --daily)').conflicts('json').default(false))
     .option('--repo <path>', 'path to git repository (default: current directory)')
+    .option('--compare <ref>', 'compare to another window (token like last-month, YYYY-MM, or YYYY-MM-DD..YYYY-MM-DD)')
     .addHelpText('after', '\nExamples:\n  git-hours --month 2025-03\n  git-hours --since 2025-03-01 --until 2025-04-01\n  git-hours --week 2025-03-24\n  git-hours --this-week\n  git-hours --last-month\n  git-hours --gap 90 --first-commit-credit 20\n  git-hours --repo ../other-repo\n')
     .configureOutput({ writeErr: () => {} })
     .exitOverride();
@@ -107,6 +183,7 @@ export function parseArgs(argv: string[]): Options {
     author?: string;
     autoGap: boolean;
     branch?: string;
+    compare?: string;
     csv: boolean;
     daily: boolean;
     excludeAuthor?: string[];
@@ -222,47 +299,23 @@ export function parseArgs(argv: string[]): Options {
   }
   if (activeShortcuts.length === 1) {
     const [name] = activeShortcuts[0];
-    const now = new Date();
-    let since: Date;
-    let until: Date;
-    switch (name) {
-      case 'today': {
-        since = startOfDay(now);
-        until = new Date(since);
-        until.setDate(until.getDate() + 1);
-        break;
-      }
-      case 'yesterday': {
-        until = startOfDay(now);
-        since = new Date(until);
-        since.setDate(since.getDate() - 1);
-        break;
-      }
-      case 'this-week': {
-        since = startOfWeek(now);
-        until = new Date(since);
-        until.setDate(until.getDate() + 7);
-        break;
-      }
-      case 'last-week': {
-        until = startOfWeek(now);
-        since = new Date(until);
-        since.setDate(since.getDate() - 7);
-        break;
-      }
-      case 'this-month': {
-        since = startOfMonth(now);
-        until = new Date(since.getFullYear(), since.getMonth() + 1, 1);
-        break;
-      }
-      case 'last-month': {
-        until = startOfMonth(now);
-        since = new Date(until.getFullYear(), until.getMonth() - 1, 1);
-        break;
-      }
-    }
+    const { since, until } = resolveShortcut(name);
     opts.since = since.toISOString();
     opts.until = until.toISOString();
+  }
+
+  if (raw.compare !== undefined) {
+    if (opts.allAuthors) {
+      console.error('git-hours: --compare cannot be combined with --all-authors');
+      process.exit(2);
+    }
+    try {
+      opts.compare = resolveCompareRef(raw.compare);
+    }
+    catch (err) {
+      console.error(`git-hours: ${(err as Error).message}`);
+      process.exit(2);
+    }
   }
 
   return opts;

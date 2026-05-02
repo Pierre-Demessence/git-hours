@@ -1,4 +1,4 @@
-import type { CommitEntry } from './types.ts';
+import type { CommitEntry, Options, SessionResult } from './types.ts';
 import process from 'node:process';
 import { parseArgs } from './cli.ts';
 import { computeDailyBreakdown, estimateHours, pickAutoGap } from './estimate.ts';
@@ -8,6 +8,29 @@ import { printHeatmap } from './heatmap.ts';
 import { printCsv, printJson } from './output.ts';
 import { printDailyBreakdown, printResult } from './print.ts';
 
+function describeRange(opts: Pick<Options, 'since' | 'until'>): string {
+  return opts.since || opts.until ? `${opts.since ?? 'beginning'} → ${opts.until ?? 'now'}` : 'all time';
+}
+
+function pctDelta(current: number, base: number): string {
+  if (base === 0)
+    return current === 0 ? '0%' : '+∞%';
+  const pct = ((current - base) / base) * 100;
+  const sign = pct > 0 ? '+' : '';
+  return `${sign}${pct.toFixed(1)}%`;
+}
+
+function printCompareSummary(currentLabel: string, current: SessionResult, compareLabel: string, compare: SessionResult): void {
+  const dh = current.hours - compare.hours;
+  const dc = current.commits - compare.commits;
+  const sign = (n: number) => (n > 0 ? '+' : '');
+  console.log('  Comparison');
+  console.log(`    Current (${currentLabel}):  ${formatHours(current.hours)}  (${current.commits} commits)`);
+  console.log(`    Compare (${compareLabel}):  ${formatHours(compare.hours)}  (${compare.commits} commits)`);
+  console.log(`    Delta:               ${sign(dh)}${formatHours(Math.abs(dh))}  (${sign(dc)}${dc} commits, ${pctDelta(current.hours, compare.hours)} hours)`);
+  console.log();
+}
+
 function main(): void {
   const opts = parseArgs(process.argv.slice(2));
   const commits = getCommits(opts);
@@ -15,7 +38,27 @@ function main(): void {
   if (opts.autoGap)
     opts.gapMinutes = pickAutoGap(commits);
 
+  if (opts.format === 'csv' && opts.compare) {
+    console.error('git-hours: --csv is not supported with --compare');
+    process.exit(2);
+  }
+
   if (opts.format === 'json') {
+    if (opts.compare) {
+      const compareCommits = getCommits({ ...opts, since: opts.compare.since, until: opts.compare.until });
+      // Re-use printJson by extending payload via temporary side channel? Simpler: build payload inline.
+      const current = estimateHours(commits, opts);
+      const compare = estimateHours(compareCommits, { ...opts, since: opts.compare.since, until: opts.compare.until });
+      const dh = current.hours - compare.hours;
+      const dc = current.commits - compare.commits;
+      const payload = {
+        current: { label: describeRange(opts), since: opts.since ?? null, until: opts.until ?? null, hours: current.hours, commits: current.commits, sessions: current.sessions },
+        compare: { label: opts.compare.label, since: opts.compare.since, until: opts.compare.until, hours: compare.hours, commits: compare.commits, sessions: compare.sessions },
+        delta: { hours: dh, commits: dc, hoursPct: compare.hours === 0 ? null : ((current.hours - compare.hours) / compare.hours) * 100 },
+      };
+      console.log(JSON.stringify(payload, null, 2));
+      return;
+    }
     printJson(commits, opts);
     return;
   }
@@ -24,9 +67,7 @@ function main(): void {
     return;
   }
 
-  const dateRange = opts.since || opts.until
-    ? `${opts.since ?? 'beginning'} → ${opts.until ?? 'now'}`
-    : 'all time';
+  const dateRange = describeRange(opts);
 
   const gapLabel = opts.autoGap ? `${opts.gapMinutes}min (auto)` : `${opts.gapMinutes}min`;
   console.log(`\n⏱  Git Hours — ${dateRange}`);
@@ -60,6 +101,14 @@ function main(): void {
     const result = estimateHours(commits, opts);
     printResult('Total', result);
     console.log();
+
+    if (opts.compare) {
+      const compareCommits = getCommits({ ...opts, since: opts.compare.since, until: opts.compare.until });
+      const compareResult = estimateHours(compareCommits, { ...opts, since: opts.compare.since, until: opts.compare.until });
+      printResult(`Compare (${opts.compare.label})`, compareResult);
+      console.log();
+      printCompareSummary(dateRange, result, opts.compare.label, compareResult);
+    }
   }
 
   if (commits.length > 0 && opts.daily) {
