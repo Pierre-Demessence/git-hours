@@ -45,6 +45,20 @@ function startOfDay(d: Date): Date {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate());
 }
 
+// Format a Date as a bare local-time string (no Z, no T): "YYYY-MM-DD HH:mm:ss".
+// Git interprets this as local time, matching the local-time bucketing used by
+// dateKey() in format.ts. Using .toISOString() (UTC, with Z) would silently
+// shift commits across day boundaries for non-UTC users.
+function toLocalGitDate(d: Date): string {
+  const y = d.getFullYear();
+  const mo = String(d.getMonth() + 1).padStart(2, '0');
+  const da = String(d.getDate()).padStart(2, '0');
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mm = String(d.getMinutes()).padStart(2, '0');
+  const ss = String(d.getSeconds()).padStart(2, '0');
+  return `${y}-${mo}-${da} ${hh}:${mm}:${ss}`;
+}
+
 function startOfWeek(d: Date): Date {
   const x = startOfDay(d);
   const day = x.getDay();
@@ -105,7 +119,7 @@ export interface DateWindow {
 export function resolveCompareRef(ref: string): DateWindow {
   if ((COMPARE_TOKENS as readonly string[]).includes(ref)) {
     const { since, until } = resolveShortcut(ref as Shortcut);
-    return { since: since.toISOString(), until: until.toISOString(), label: ref };
+    return { since: toLocalGitDate(since), until: toLocalGitDate(until), label: ref };
   }
   // YYYY-MM (whole month)
   if (/^\d{4}-\d{2}$/.test(ref)) {
@@ -114,19 +128,19 @@ export function resolveCompareRef(ref: string): DateWindow {
       throw new Error(`--compare month must be between 01 and 12, got "${ref}"`);
     const since = new Date(y, m - 1, 1);
     const until = m === 12 ? new Date(y + 1, 0, 1) : new Date(y, m, 1);
-    return { since: since.toISOString(), until: until.toISOString(), label: ref };
+    return { since: toLocalGitDate(since), until: toLocalGitDate(until), label: ref };
   }
-  // YYYY-MM-DD..YYYY-MM-DD (explicit range, end-exclusive)
-  const rangeMatch = ref.match(/^(\d{4}-\d{2}-\d{2})\.\.(\d{4}-\d{2}-\d{2})$/);
+  // YYYY-MM-DD..YYYY-MM-DD (explicit range, end-exclusive, local time)
+  const rangeMatch = ref.match(/^(\d{4})-(\d{2})-(\d{2})\.\.(\d{4})-(\d{2})-(\d{2})$/);
   if (rangeMatch) {
-    const [, a, b] = rangeMatch;
-    const ta = Date.parse(a);
-    const tb = Date.parse(b);
-    if (Number.isNaN(ta) || Number.isNaN(tb))
+    const [ay, am, ad, by, bm, bd] = rangeMatch.slice(1).map(Number);
+    const sinceD = new Date(ay, am - 1, ad);
+    const untilD = new Date(by, bm - 1, bd);
+    if (Number.isNaN(sinceD.getTime()) || Number.isNaN(untilD.getTime()))
       throw new Error(`--compare range has invalid date: "${ref}"`);
-    if (ta >= tb)
+    if (sinceD.getTime() >= untilD.getTime())
       throw new Error(`--compare range start must be before end: "${ref}"`);
-    return { since: new Date(ta).toISOString(), until: new Date(tb).toISOString(), label: ref };
+    return { since: toLocalGitDate(sinceD), until: toLocalGitDate(untilD), label: ref };
   }
   throw new Error(`--compare: unrecognized ref "${ref}". Expected one of: ${COMPARE_TOKENS.join(', ')}, YYYY-MM, or YYYY-MM-DD..YYYY-MM-DD`);
 }
@@ -257,9 +271,9 @@ export function parseArgs(argv: string[]): Options {
       console.error('git-hours: --month must have a month between 01 and 12');
       process.exit(2);
     }
-    opts.since = new Date(year, month - 1, 1).toISOString();
+    opts.since = toLocalGitDate(new Date(year, month - 1, 1));
     const nextMonth = month === 12 ? new Date(year + 1, 0, 1) : new Date(year, month, 1);
-    opts.until = nextMonth.toISOString();
+    opts.until = toLocalGitDate(nextMonth);
   }
 
   if (raw.week) {
@@ -267,15 +281,17 @@ export function parseArgs(argv: string[]): Options {
       console.error('git-hours: --week must be YYYY-MM-DD (e.g. 2025-03-24)');
       process.exit(2);
     }
-    const start = new Date(raw.week);
+    // Parse as local time (new Date('YYYY-MM-DD') would treat it as UTC).
+    const [wy, wm, wd] = raw.week.split('-').map(Number);
+    const start = new Date(wy, wm - 1, wd);
     // Snap to the Monday of that ISO week (getDay(): 0=Sun..6=Sat).
     const dayOfWeek = start.getDay();
     const offsetToMonday = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
     start.setDate(start.getDate() + offsetToMonday);
     const end = new Date(start);
     end.setDate(end.getDate() + 7);
-    opts.since = start.toISOString();
-    opts.until = end.toISOString();
+    opts.since = toLocalGitDate(start);
+    opts.until = toLocalGitDate(end);
   }
 
   const shortcuts = [
@@ -300,8 +316,8 @@ export function parseArgs(argv: string[]): Options {
   if (activeShortcuts.length === 1) {
     const [name] = activeShortcuts[0];
     const { since, until } = resolveShortcut(name);
-    opts.since = since.toISOString();
-    opts.until = until.toISOString();
+    opts.since = toLocalGitDate(since);
+    opts.until = toLocalGitDate(until);
   }
 
   if (raw.compare !== undefined) {

@@ -33,4 +33,25 @@ describe('resolveCompareRef', () => {
   it('rejects reversed ranges', () => {
     assert.throws(() => resolveCompareRef('2025-03-08..2025-03-01'), /start must be before end/);
   });
+
+  // Regression: v3 #2. Range strings must be local-time (no Z, no T) so git's
+  // range filter agrees with local-time bucketing in dateKey().
+  it('emits local-time strings (no Z suffix) for tokens', () => {
+    const w = resolveCompareRef('this-month');
+    assert.doesNotMatch(w.since, /Z$/, `expected local-time string, got "${w.since}"`);
+    assert.doesNotMatch(w.until, /Z$/);
+    assert.doesNotMatch(w.since, /T/);
+  });
+
+  it('emits local-time strings for YYYY-MM', () => {
+    const w = resolveCompareRef('2025-03');
+    assert.match(w.since, /^2025-03-01 00:00:00$/);
+    assert.match(w.until, /^2025-04-01 00:00:00$/);
+  });
+
+  it('emits local-time strings for explicit ranges', () => {
+    const w = resolveCompareRef('2025-03-01..2025-03-08');
+    assert.match(w.since, /^2025-03-01 00:00:00$/);
+    assert.match(w.until, /^2025-03-08 00:00:00$/);
+  });
 });
