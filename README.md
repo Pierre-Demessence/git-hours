@@ -46,7 +46,7 @@ git-hours [options]
 | `--exclude-author <name...>` | Exclude commits by author (repeatable, substring match) |
 | `--top <n>` | Limit `--all-authors` to the top N authors by hours |
 | `--branch <name>` | Analyze a specific branch (default: HEAD) |
-| `--all-branches` | Analyze commits reachable from any ref |
+| `--all-branches` | Analyze commits reachable from any ref (includes remote-tracking refs — see note below) |
 | `--daily` | Include the per-day breakdown (off by default) |
 | `--heatmap` | Print a 7×24 hour-of-day × day-of-week heatmap |
 | `--json` | Emit machine-readable JSON instead of human text |
@@ -62,9 +62,18 @@ git-hours [options]
 git-hours --month 2025-03
 git-hours --since 2025-03-01 --until 2025-04-01
 git-hours --week 2025-03-24
-git-hours --gap 90 --first 20
+git-hours --gap 90 --first-commit-credit 20
 git-hours --all-authors
 ```
+
+### Notes
+
+`--all-branches` passes `--all` to git, which walks **every ref** — including
+remote-tracking branches under `refs/remotes/*`. If you have local-only work,
+this is fine. If you fetch from a shared remote, single-author totals can be
+silently inflated by teammates' commits that exist on remote refs but never
+landed in your local branches. Combine with `--author <name>` (or `--exclude-author`)
+to scope to your own work.
 
 ## Tests
 
