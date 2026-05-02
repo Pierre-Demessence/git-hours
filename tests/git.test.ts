@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
+import { Buffer } from 'node:buffer';
 import { describe, it } from 'node:test';
-import { applyExcludeAuthors, parseLogOutput } from '../src/git.ts';
+import { applyExcludeAuthors, extractGitErrorMessage, parseLogOutput } from '../src/git.ts';
 
 const FS = '\x1F';
 
@@ -69,5 +70,26 @@ describe('applyExcludeAuthors', () => {
     const out = applyExcludeAuthors(commits, ['alice', 'bot']);
     assert.equal(out.length, 1);
     assert.equal(out[0].author, 'Bob');
+  });
+});
+
+describe('extractGitErrorMessage', () => {
+  it('reads string stderr', () => {
+    const err = Object.assign(new Error('exec failed'), { stderr: 'fatal: not a git repository\n' });
+    assert.equal(extractGitErrorMessage(err), 'fatal: not a git repository\n');
+  });
+
+  it('decodes Buffer stderr', () => {
+    const err = Object.assign(new Error('exec failed'), { stderr: Buffer.from('boom', 'utf-8') });
+    assert.equal(extractGitErrorMessage(err), 'boom');
+  });
+
+  it('falls back to err.message when stderr is missing', () => {
+    assert.equal(extractGitErrorMessage(new Error('plain message')), 'plain message');
+  });
+
+  it('handles non-Error throws', () => {
+    assert.equal(extractGitErrorMessage('weird'), 'weird');
+    assert.equal(extractGitErrorMessage(null), 'null');
   });
 });
