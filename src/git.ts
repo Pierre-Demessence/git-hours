@@ -64,6 +64,12 @@ export function getCommits(opts: Options): CommitEntry[] {
   else if (opts.branch)
     args.push(opts.branch);
 
+  // execFileSync blocks the event loop, so a true animated spinner isn't
+  // possible without going async. We print a static progress hint to a TTY
+  // stderr before the call and clear it after — confirms the tool is alive on
+  // large repos. Suppressed when stderr is piped/redirected.
+  const clearProgress = showProgressHint();
+
   let raw: string;
   try {
     raw = execFileSync('git', args, {
@@ -76,6 +82,7 @@ export function getCommits(opts: Options): CommitEntry[] {
     }).trim();
   }
   catch (err) {
+    clearProgress();
     const message = extractGitErrorMessage(err);
     if (/not a git repository/i.test(message)) {
       console.error('git-hours: not a git repository (run from inside a repo).');
@@ -88,9 +95,24 @@ export function getCommits(opts: Options): CommitEntry[] {
     }
     process.exit(1);
   }
+  clearProgress();
 
   if (!raw)
     return [];
 
   return applyExcludeAuthors(parseLogOutput(raw), opts.excludeAuthor);
+}
+
+function showProgressHint(): () => void {
+  if (!process.stderr.isTTY)
+    return () => {};
+  process.stderr.write('⏳ Reading git log...');
+  let cleared = false;
+  return () => {
+    if (cleared)
+      return;
+    cleared = true;
+    // \r returns cursor to column 0; ESC[2K clears the entire line.
+    process.stderr.write('\r\x1B[2K');
+  };
 }
