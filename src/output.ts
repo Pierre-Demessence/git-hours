@@ -2,6 +2,7 @@ import type { CommitEntry, Options, SessionResult } from './types.ts';
 import process from 'node:process';
 import { computeDailyBreakdown, estimateHours } from './estimate.ts';
 import { dayName, isoWeekNumber } from './format.ts';
+import { computeHeatmap } from './heatmap.ts';
 
 interface JsonResult {
   commits: number;
@@ -61,6 +62,9 @@ export function buildJsonPayload(commits: CommitEntry[], opts: Options): Record<
         week: isoWeekNumber(date),
       }));
   }
+
+  if (opts.heatmap)
+    payload.byHourDayOfWeek = computeHeatmap(commits);
 
   return payload;
 }

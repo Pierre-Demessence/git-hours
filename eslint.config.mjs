@@ -7,7 +7,7 @@ export default antfu({
   stylistic: {
     semi: true,
   },
-  ignores: ['dist/**', 'node_modules/**'],
+  ignores: ['dist/**', 'node_modules/**', 'docs/**'],
   rules: {
     // This is a CLI; console output is the product.
     'no-console': 'off',
