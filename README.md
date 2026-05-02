@@ -39,7 +39,7 @@ git-hours [options]
 | `--this-week` / `--last-week` | Shortcut: analyze the current or previous week (Monday-based) |
 | `--this-month` / `--last-month` | Shortcut: analyze the current or previous month |
 | `--gap <minutes>` | Max gap between commits in a session (default: `120`) |
-| `--first <minutes>` | Time credited for the first commit in a session (default: `30`) |
+| `--first-commit-credit <minutes>` | Time credited for the first commit in a session (default: `30`) |
 | `--auto-gap` | Auto-pick gap from commit cadence (P90 of inter-commit deltas ≤ 6h, clamped to 60–240) |
 | `--author <name>` | Filter by author name (substring match) |
 | `--all-authors` | Show per-author breakdown |
@@ -76,9 +76,9 @@ Runs Node's built-in test runner via `tsx` (used as a dev-time TS loader; not a 
 ## How the estimate works
 For each ordered sequence of commits:
 
-- The first commit of a session is credited `--first` minutes (default 30).
+- The first commit of a session is credited `--first-commit-credit` minutes (default 30).
 - Subsequent commits within `--gap` minutes (default 120) of the previous one are added at their actual elapsed time.
-- A gap larger than `--gap` ends the session and starts a new one (which itself gets `--first` minutes credited).
+- A gap larger than `--gap` ends the session and starts a new one (which itself gets `--first-commit-credit` minutes credited).
 
 This is a heuristic — it's a useful approximation, not a timesheet.
 

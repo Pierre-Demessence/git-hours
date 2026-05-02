@@ -72,7 +72,7 @@ export function parseArgs(argv: string[]): Options {
     .option('--this-month', 'shortcut: analyze the current month')
     .option('--last-month', 'shortcut: analyze the previous month')
     .addOption(new Option('--gap <minutes>', 'max gap between commits in a session').default(120).argParser(parsePositiveNumber('gap')))
-    .addOption(new Option('--first <minutes>', 'time credited for the first commit in a session').default(30).argParser(parsePositiveNumber('first')))
+    .addOption(new Option('--first-commit-credit <minutes>', 'time credited for the first commit in a session').default(30).argParser(parsePositiveNumber('first-commit-credit')))
     .addOption(new Option('--auto-gap', 'auto-pick gap from commit cadence (P90 of inter-commit deltas)').conflicts('gap').default(false))
     .addOption(new Option('--author <name>', 'filter by author name (substring match)').conflicts('allAuthors'))
     .option('--all-authors', 'show per-author breakdown', false)
@@ -85,7 +85,7 @@ export function parseArgs(argv: string[]): Options {
     .addOption(new Option('--json', 'output JSON instead of text').conflicts('csv').default(false))
     .addOption(new Option('--csv', 'output daily breakdown as CSV (implies --daily)').conflicts('json').default(false))
     .option('--repo <path>', 'path to git repository (default: current directory)')
-    .addHelpText('after', '\nExamples:\n  git-hours --month 2025-03\n  git-hours --since 2025-03-01 --until 2025-04-01\n  git-hours --week 2025-03-24\n  git-hours --this-week\n  git-hours --last-month\n  git-hours --gap 90 --first 20\n  git-hours --repo ../other-repo\n')
+    .addHelpText('after', '\nExamples:\n  git-hours --month 2025-03\n  git-hours --since 2025-03-01 --until 2025-04-01\n  git-hours --week 2025-03-24\n  git-hours --this-week\n  git-hours --last-month\n  git-hours --gap 90 --first-commit-credit 20\n  git-hours --repo ../other-repo\n')
     .configureOutput({ writeErr: () => {} })
     .exitOverride();
 
@@ -110,7 +110,7 @@ export function parseArgs(argv: string[]): Options {
     csv: boolean;
     daily: boolean;
     excludeAuthor?: string[];
-    first: number;
+    firstCommitCredit: number;
     gap: number;
     heatmap: boolean;
     json: boolean;
@@ -136,7 +136,7 @@ export function parseArgs(argv: string[]): Options {
     branch: raw.branch,
     daily: raw.daily || raw.csv,
     excludeAuthor: raw.excludeAuthor ?? [],
-    firstCommitMinutes: raw.first,
+    firstCommitMinutes: raw.firstCommitCredit,
     format: raw.json ? 'json' : raw.csv ? 'csv' : 'text',
     gapMinutes: raw.gap,
     heatmap: raw.heatmap,
