@@ -4,6 +4,16 @@ export function formatHours(hours: number): string {
   return `${String(h).padStart(2, '0')}h ${String(m).padStart(2, '0')}m`;
 }
 
+export function formatTimeOfDay(date: Date): string {
+  return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+}
+
+export function formatDateTime(date: Date): string {
+  const d = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+  const t = `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}:${String(date.getSeconds()).padStart(2, '0')}`;
+  return `${d} ${t}`;
+}
+
 export function dateKey(ts: number): string {
   const d = new Date(ts);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { dateKey, dayName, formatHours, isoWeekNumber } from '../src/format.ts';
+import { dateKey, dayName, formatHours, formatTimeOfDay, isoWeekNumber } from '../src/format.ts';
 
 describe('formatHours', () => {
   it('formats whole hours', () => {
@@ -52,5 +52,14 @@ describe('dayName', () => {
 
   it('maps a Sunday correctly', () => {
     assert.equal(dayName('2026-05-03'), 'Sun');
+  });
+});
+
+describe('formatTimeOfDay', () => {
+  it('zero-pads hours and minutes', () => {
+    assert.equal(formatTimeOfDay(new Date(2026, 0, 1, 9, 4)), '09:04');
+  });
+  it('handles late hours', () => {
+    assert.equal(formatTimeOfDay(new Date(2026, 0, 1, 23, 59)), '23:59');
   });
 });

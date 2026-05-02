@@ -1,5 +1,5 @@
 import type { SessionResult } from './types.ts';
-import { dayName, formatHours, isoWeekNumber } from './format.ts';
+import { dayName, formatDateTime, formatHours, formatTimeOfDay, isoWeekNumber } from './format.ts';
 
 export function printResult(label: string, result: SessionResult): void {
   if (result.commits === 0) {
@@ -10,8 +10,8 @@ export function printResult(label: string, result: SessionResult): void {
   console.log(`    Commits:      ${result.commits}`);
   console.log(`    Sessions:     ${result.sessions}`);
   console.log(`    Total time:   ${formatHours(result.hours)}`);
-  console.log(`    First commit: ${result.firstCommit?.toLocaleString() ?? '—'}`);
-  console.log(`    Last commit:  ${result.lastCommit?.toLocaleString() ?? '—'}`);
+  console.log(`    First commit: ${result.firstCommit ? formatDateTime(result.firstCommit) : '—'}`);
+  console.log(`    Last commit:  ${result.lastCommit ? formatDateTime(result.lastCommit) : '—'}`);
 }
 
 export function printDailyBreakdown(daily: Map<string, SessionResult>): void {
@@ -20,18 +20,22 @@ export function printDailyBreakdown(daily: Map<string, SessionResult>): void {
     return;
   const maxHours = Math.max(...sorted.map(([, r]) => r.hours));
 
+  const SEP = '  ';
   console.log('  Daily breakdown:');
-  console.log(`  ${'Date'.padEnd(12)} ${'Day'.padEnd(4)} ${'Time'.padStart(7)} ${'Commits'.padStart(8)} ${'Bar'}`);
-  console.log(`  ${'─'.repeat(12)} ${'─'.repeat(4)} ${'─'.repeat(7)} ${'─'.repeat(8)} ${'─'.repeat(30)}`);
+  console.log(`  ${'Date'.padEnd(12)}${SEP}${'Day'.padEnd(4)}${SEP}${'Time'.padEnd(7)}${SEP}${'Range'.padEnd(15)}${SEP}${'Commits'.padEnd(8)}${SEP}Bar`);
+  console.log(`  ${'─'.repeat(12)}${SEP}${'─'.repeat(4)}${SEP}${'─'.repeat(7)}${SEP}${'─'.repeat(15)}${SEP}${'─'.repeat(8)}${SEP}${'─'.repeat(28)}`);
 
   let currentWeek = '';
   let weekHours = 0;
   let weekCommits = 0;
 
+  // Day(12) + SEP + DayName(4) = 18 chars before the Time column starts.
+  const subtotalLabelWidth = 12 + SEP.length + 4;
+
   const flushWeek = () => {
     if (currentWeek) {
       console.log(
-        `  ${`  ${currentWeek} subtotal`.padEnd(17)} ${formatHours(weekHours).padStart(7)} ${String(weekCommits).padStart(8)}`,
+        `  ${`  ${currentWeek} subtotal`.padEnd(subtotalLabelWidth)}${SEP}${formatHours(weekHours).padStart(7)}${SEP}${' '.repeat(15)}${SEP}${String(weekCommits).padStart(8)}`,
       );
       console.log();
     }
@@ -51,8 +55,11 @@ export function printDailyBreakdown(daily: Map<string, SessionResult>): void {
 
     const barLen = maxHours > 0 ? Math.round((result.hours / maxHours) * 28) : 0;
     const bar = '█'.repeat(barLen);
+    const range = result.firstCommit && result.lastCommit
+      ? `${formatTimeOfDay(result.firstCommit)} → ${formatTimeOfDay(result.lastCommit)}`
+      : '—';
     console.log(
-      `  ${day.padEnd(12)} ${dayName(day).padEnd(4)} ${formatHours(result.hours).padStart(7)} ${String(result.commits).padStart(8)} ${bar}`,
+      `  ${day.padEnd(12)}${SEP}${dayName(day).padEnd(4)}${SEP}${formatHours(result.hours).padStart(7)}${SEP}${range.padEnd(15)}${SEP}${String(result.commits).padStart(8)}${SEP}${bar}`,
     );
   }
   flushWeek();
