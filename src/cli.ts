@@ -9,7 +9,6 @@ import { parseWindowSpec, resolveWindow } from './dates.ts';
 import { ExitRequest, UsageError } from './errors.ts';
 import { expandHome } from './scan.ts';
 
-const DEFAULT_GAP = 120;
 const DEFAULT_FIRST_COMMIT_CREDIT = 30;
 
 function parseNonNegativeNumber(name: string) {
@@ -37,7 +36,7 @@ interface RawOptions {
   allAuthors?: boolean;
   allBranches?: boolean;
   author?: string[];
-  autoGap?: boolean;
+  autoGap?: boolean; // removed option, kept to explain the change
   branch?: string;
   compare?: string;
   config?: string | false;
@@ -88,9 +87,9 @@ function buildProgram(): Command {
     .option('--last-week', 'shortcut: analyze the previous week')
     .option('--this-month', 'shortcut: analyze the current month')
     .option('--last-month', 'shortcut: analyze the previous month')
-    .addOption(new Option('--gap <minutes>', `max gap between commits in a session (default: ${DEFAULT_GAP})`).argParser(parseNonNegativeNumber('gap')))
+    .addOption(new Option('--gap <minutes>', 'fixed max gap between commits in a session (default: calibrated from your history)').argParser(parseNonNegativeNumber('gap')))
     .addOption(new Option('--first-commit-credit <minutes>', `time credited for the first commit in a session (default: ${DEFAULT_FIRST_COMMIT_CREDIT})`).argParser(parseNonNegativeNumber('first-commit-credit')))
-    .addOption(new Option('--auto-gap', 'auto-pick gap from commit cadence (P90 of inter-commit deltas)').conflicts('gap'))
+    .addOption(new Option('--auto-gap').hideHelp())
     .addOption(new Option('--author <pattern...>', 'count commits whose "Name <email>" contains a pattern (case-insensitive; default: your git user.email and user.name)').conflicts(['allAuthors', 'perAuthor']))
     .option('--all-authors', 'count every author\'s commits (instead of only yours)')
     .option('--per-author', 'per-author breakdown of every author\'s commits')
@@ -130,6 +129,9 @@ export function parseArgs(argv: string[], parseOptions: ParseOptions = {}): Opti
     throw new UsageError(e.message.replace(/^error: /, ''));
   }
   const raw = program.opts<RawOptions>();
+
+  if (raw.autoGap)
+    throw new UsageError('--auto-gap was removed in 3.0: the gap is now calibrated automatically (use --gap to fix it)');
 
   // --- config file -------------------------------------------------------
   let config: FileConfig = {};
@@ -198,9 +200,6 @@ export function parseArgs(argv: string[], parseOptions: ParseOptions = {}): Opti
     ? 'all'
     : authorSource.author ? 'patterns' : 'git-config';
 
-  const cliChoseGap = raw.gap !== undefined || raw.autoGap !== undefined;
-  const gapSource = cliChoseGap ? { autoGap: raw.autoGap, gap: raw.gap } : config;
-
   // --branch on the CLI overrides a config `allBranches`.
   const allBranches = raw.allBranches ?? (raw.branch === undefined && config.allBranches) ?? false;
 
@@ -221,12 +220,11 @@ export function parseArgs(argv: string[], parseOptions: ParseOptions = {}): Opti
     format,
     repo: raw.repo,
     report: {
-      autoGap: gapSource.autoGap ?? false,
       // --csv implies --daily for a single repo; with --scan, plain --csv is
       // one row per project and --daily makes it one row per project per day.
       daily: raw.daily || (raw.csv && !scanning),
       firstCommitMinutes: raw.firstCommitCredit ?? config.firstCommitCredit ?? DEFAULT_FIRST_COMMIT_CREDIT,
-      gapMinutes: gapSource.gap ?? DEFAULT_GAP,
+      gapMinutes: raw.gap ?? config.gap,
       heatmap: raw.heatmap,
       perAuthor,
       repoMode: (raw.independentRepos ?? config.independentRepos) ? 'independent' : 'shared',

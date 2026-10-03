@@ -1,28 +1,6 @@
 import type { CommitEntry, EstimateParams, SessionResult } from './types.ts';
 import { dateKey } from './format.ts';
 
-// Auto-pick a session gap from the commit cadence: P90 of inter-commit deltas
-// that are <= 6h (those are presumed within-session). Clamped to [60, 240]
-// minutes and rounded up to the nearest 5. Falls back to 120 when there isn't
-// enough signal.
-export function pickAutoGap(commits: CommitEntry[]): number {
-  if (commits.length < 6)
-    return 120;
-  const sorted = [...commits].sort((a, b) => a.timestamp - b.timestamp);
-  const deltas: number[] = [];
-  for (let i = 1; i < sorted.length; i++) {
-    const minutes = (sorted[i].timestamp - sorted[i - 1].timestamp) / 60_000;
-    if (minutes > 0 && minutes <= 360)
-      deltas.push(minutes);
-  }
-  if (deltas.length < 5)
-    return 120;
-  deltas.sort((a, b) => a - b);
-  const p90 = deltas[Math.floor(deltas.length * 0.9)];
-  const rounded = Math.ceil(p90 / 5) * 5;
-  return Math.max(60, Math.min(240, rounded));
-}
-
 export function estimateHours(commits: CommitEntry[], params: EstimateParams): SessionResult {
   if (commits.length === 0) {
     return { commits: 0, firstCommit: null, hours: 0, lastCommit: null, sessions: 0 };
@@ -78,10 +56,15 @@ export interface GroupResult {
 
 const byHoursDesc = (a: GroupResult, b: GroupResult) => b.result.hours - a.result.hours;
 
+// Parameters of one group: its own entry in `perGroup` (e.g. a gap
+// calibrated per author), else the shared `params`.
+export type GroupParams = Map<string, EstimateParams>;
+const paramsOf = (params: EstimateParams, key: string, perGroup?: GroupParams) => perGroup?.get(key) ?? params;
+
 // Each group estimated on its own, ranked by hours descending.
-export function estimateGroups(commits: CommitEntry[], params: EstimateParams, keyOf: KeyFn): GroupResult[] {
+export function estimateGroups(commits: CommitEntry[], params: EstimateParams, keyOf: KeyFn, perGroup?: GroupParams): GroupResult[] {
   return [...groupBy(commits, keyOf).entries()]
-    .map(([key, list]) => ({ key, result: estimateHours(list, params) }))
+    .map(([key, list]) => ({ key, result: estimateHours(list, paramsOf(params, key, perGroup)) }))
     .sort(byHoursDesc);
 }
 
@@ -120,10 +103,10 @@ export function sumResults(results: SessionResult[]): SessionResult {
 // independently and summed: per author that gives person-hours, so
 // interleaved commits from different people are never mistaken for one
 // continuous session.
-export function estimateTotal(commits: CommitEntry[], params: EstimateParams, groupKey?: KeyFn): SessionResult {
+export function estimateTotal(commits: CommitEntry[], params: EstimateParams, groupKey?: KeyFn, perGroup?: GroupParams): SessionResult {
   if (!groupKey)
     return estimateHours(commits, params);
-  return sumResults(estimateGroups(commits, params, groupKey).map(g => g.result));
+  return sumResults(estimateGroups(commits, params, groupKey, perGroup).map(g => g.result));
 }
 
 // Walk ONE timeline with the same session rules as estimateHours, crediting
@@ -215,16 +198,16 @@ function mergeDaily(maps: Iterable<Map<string, SessionResult>>): Map<string, Ses
 // Per-day breakdown. Sessions crossing midnight are split between the days.
 // With `groupKey` it is the sum of each group's own breakdown, so it always
 // adds up to estimateTotal() with the same grouping.
-export function computeDailyBreakdown(commits: CommitEntry[], params: EstimateParams, groupKey?: KeyFn): Map<string, SessionResult> {
+export function computeDailyBreakdown(commits: CommitEntry[], params: EstimateParams, groupKey?: KeyFn, perGroup?: GroupParams): Map<string, SessionResult> {
   if (!groupKey)
     return dailyForStream(commits, params);
-  return mergeDaily([...groupBy(commits, groupKey).values()].map(list => dailyForStream(list, params)));
+  return mergeDaily([...groupBy(commits, groupKey).entries()].map(([key, list]) => dailyForStream(list, paramsOf(params, key, perGroup))));
 }
 
 // Per-group, per-day breakdown: on one shared timeline (`shared`) or with
 // each group estimated on its own.
-export function dailyByGroup(commits: CommitEntry[], params: EstimateParams, keyOf: KeyFn, shared: boolean): Map<string, Map<string, SessionResult>> {
+export function dailyByGroup(commits: CommitEntry[], params: EstimateParams, keyOf: KeyFn, shared: boolean, perGroup?: GroupParams): Map<string, Map<string, SessionResult>> {
   if (shared)
     return attributeDaily(commits, params, keyOf);
-  return new Map([...groupBy(commits, keyOf).entries()].map(([key, list]) => [key, dailyForStream(list, params)]));
+  return new Map([...groupBy(commits, keyOf).entries()].map(([key, list]) => [key, dailyForStream(list, paramsOf(params, key, perGroup))]));
 }

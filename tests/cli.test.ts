@@ -12,9 +12,8 @@ describe('parseArgs', () => {
     const o = parseArgs([]);
     assert.equal(o.format, 'text');
     assert.equal(o.authorMode, 'git-config');
-    assert.equal(o.report.gapMinutes, 120);
+    assert.equal(o.report.gapMinutes, undefined); // calibrated
     assert.equal(o.report.firstCommitMinutes, 30);
-    assert.equal(o.report.autoGap, false);
     assert.equal(o.report.perAuthor, false);
     assert.equal(o.window.label, 'all time');
     assert.deepEqual(o.filter, { allBranches: false, authors: [], branch: undefined, excludeAuthor: [] });
@@ -83,7 +82,7 @@ describe('parseArgs', () => {
   const invalid: [string[], RegExp][] = [
     [['--bogus'], /unknown option/],
     [['--gap', '-5'], /non-negative/],
-    [['--gap', '60', '--auto-gap'], /cannot be used with/],
+    [['--auto-gap'], /--auto-gap was removed in 3\.0/],
     [['--json', '--csv'], /cannot be used with/],
     [['--top', '3'], /requires --per-author or --scan/],
     [['--per-author', '--top', '1.5'], /positive integer/],
@@ -145,11 +144,10 @@ describe('parseArgs with a config file', () => {
   });
 
   it('lets CLI flags win, group by group', () => {
-    write({ allBranches: true, author: 'me@x', autoGap: true, excludeAuthor: ['bot'], fetch: false, scan: ['/elsewhere'] });
+    write({ allBranches: true, author: 'me@x', excludeAuthor: ['bot'], fetch: false, gap: 90, scan: ['/elsewhere'] });
     const o = parse(['--all-authors', '--gap', '45', '--exclude-author', 'ci', '--scan', '.', '--fetch']);
     assert.equal(o.authorMode, 'all');
     assert.deepEqual(o.filter.authors, []);
-    assert.equal(o.report.autoGap, false);
     assert.equal(o.report.gapMinutes, 45);
     assert.deepEqual(o.filter.excludeAuthor, ['ci']);
     assert.deepEqual(o.scan, { exclude: [], fetch: true, roots: ['.'] });
@@ -170,7 +168,7 @@ describe('parseArgs with a config file', () => {
 
   it('--no-config ignores the file and --config picks another one', () => {
     write({ gap: 90 });
-    assert.equal(parse(['--no-config']).report.gapMinutes, 120);
+    assert.equal(parse(['--no-config']).report.gapMinutes, undefined);
     const other = join(dir, 'other.json');
     writeFileSync(other, JSON.stringify({ gap: 30 }));
     const o = parse(['--config', other]);
@@ -185,7 +183,7 @@ describe('parseArgs with a config file', () => {
     [{ allBranches: 'yes' }, /"allBranches" must be true or false/],
     [{ scan: [] }, /"scan" must be a non-empty string/],
     [{ author: 'me', allAuthors: true }, /cannot both be set/],
-    [{ gap: 90, autoGap: true }, /cannot both be set/],
+    [{ autoGap: true }, /"autoGap" was removed in 3\.0/],
   ];
   for (const [config, message] of badConfigs) {
     it(`rejects config ${JSON.stringify(config)}`, () => {

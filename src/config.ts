@@ -10,7 +10,6 @@ export interface FileConfig {
   allAuthors?: boolean;
   allBranches?: boolean;
   author?: string[];
-  autoGap?: boolean;
   excludeAuthor?: string[];
   fetch?: boolean;
   firstCommitCredit?: number;
@@ -27,7 +26,6 @@ const KEYS: Record<keyof FileConfig, Kind> = {
   allAuthors: 'boolean',
   allBranches: 'boolean',
   author: 'strings',
-  autoGap: 'boolean',
   excludeAuthor: 'strings',
   fetch: 'boolean',
   firstCommitCredit: 'number',
@@ -54,6 +52,8 @@ export function validateConfig(raw: unknown, path: string): FileConfig {
   for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
     if (key === '$schema')
       continue;
+    if (key === 'autoGap')
+      fail('"autoGap" was removed in 3.0: the gap is calibrated automatically unless "gap" is set');
     const kind = KEYS[key as keyof FileConfig];
     if (!kind)
       fail(`unknown key "${key}" (allowed: ${Object.keys(KEYS).join(', ')})`);
@@ -74,8 +74,6 @@ export function validateConfig(raw: unknown, path: string): FileConfig {
 
   if (config.author && config.allAuthors)
     fail('"author" and "allAuthors" cannot both be set');
-  if (config.autoGap && config.gap !== undefined)
-    fail('"gap" and "autoGap" cannot both be set');
   return config as FileConfig;
 }
 

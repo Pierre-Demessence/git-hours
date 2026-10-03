@@ -6,8 +6,8 @@ import { buildJson } from '../src/render/json.ts';
 import { renderText } from '../src/render/text.ts';
 import { buildReport } from '../src/report.ts';
 
+// A fixed gap keeps these tests independent of calibration (tested below).
 const opts: ReportOptions = {
-  autoGap: false,
   daily: false,
   firstCommitMinutes: 30,
   gapMinutes: 120,
@@ -44,14 +44,6 @@ describe('buildReport', () => {
     const r = buildReport({ commits, window: ALL }, { ...opts, daily: true });
     assert.deepEqual(r.daily?.map(d => [d.date, d.day, d.week]), [['2025-03-05', 'Wed', 'W10'], ['2025-03-06', 'Thu', 'W10']]);
     assert.equal(r.daily?.reduce((s, d) => s + d.result.hours, 0), r.total.hours);
-  });
-
-  it('picks the auto gap from the main window', () => {
-    // Commits every 5 minutes → P90 is tiny → clamped to 60.
-    const commits = Array.from({ length: 30 }, (_, i) => commit(T + i * 5 * MIN));
-    const r = buildReport({ commits, window: ALL }, { ...opts, autoGap: true });
-    assert.equal(r.params.gapMinutes, 60);
-    assert.equal(r.params.autoGap, true);
   });
 
   it('computes a comparison', () => {
@@ -198,5 +190,55 @@ describe('scan reports', () => {
   it('quotes CSV fields containing commas', () => {
     const r = buildReport({ commits: [scanCommit('a,b', T)], scan: { repos: [{ name: 'a,b', path: '/x' }], roots: ['/'] }, window: ALL }, opts);
     assert.match(renderCsv(r), /^"a,b",/m);
+  });
+});
+
+describe('gap calibration in reports', () => {
+  // Commits every 10 minutes in 1h sessions, 3 sessions a day 2h apart, for
+  // 90 days: plenty of same-day gaps, in-session gaps of 10 minutes.
+  const sessions = (author: string, step: number, days = 90): CommitEntry[] => {
+    const out: CommitEntry[] = [];
+    for (let d = 0; d < days; d++) {
+      for (const start of [9, 12, 15]) {
+        for (let m = 0; m <= 60; m += step)
+          out.push(commit(new Date(2025, 0, 1 + d, start, m).getTime(), author));
+      }
+    }
+    return out;
+  };
+  const auto = { ...opts, gapMinutes: undefined };
+
+  it('says when the gap is fixed', () => {
+    const r = buildReport({ commits: [commit(T)], window: ALL }, opts);
+    assert.deepEqual(r.params.gap, { perGroup: false, sampleGaps: 0, source: 'fixed' });
+    assert.match(renderText(r), /Gap threshold: 120min \(fixed\)/);
+  });
+
+  it('falls back to the default without enough history', () => {
+    const r = buildReport({ commits: [commit(T), commit(T + 10 * MIN)], window: ALL }, auto);
+    assert.equal(r.params.gapMinutes, 120);
+    assert.equal(r.params.gap.source, 'default');
+    assert.match(renderText(r), /120min \(default: not enough history to calibrate\)/);
+  });
+
+  it('learns the gap from the calibration commits, not just the window', () => {
+    const history = sessions('Alice', 10);
+    const r = buildReport({ calibration: { commits: history, until: new Date(2025, 3, 1).getTime() }, commits: [commit(T)], window: ALL }, auto);
+    assert.equal(r.params.gap.source, 'auto');
+    assert.ok(r.params.gap.sampleGaps >= 500);
+    // 10-minute in-session gaps vs 2-hour breaks: the gap sits in between.
+    assert.ok(r.params.gapMinutes >= 30 && r.params.gapMinutes <= 90, `gap ${r.params.gapMinutes}`);
+    assert.match(renderText(r), /min \(auto: learned from \d+ gaps, 2025-01-01\.\.2025-03-31\)/);
+  });
+
+  it('calibrates per author with --per-author, falling back to the overall gap', () => {
+    const history = [...sessions('Fast', 5), ...sessions('Slow', 30), commit(T, 'Rare')];
+    const r = buildReport({ calibration: { commits: history, until: new Date(2025, 3, 1).getTime() }, commits: history, window: ALL }, { ...auto, perAuthor: true });
+    const gaps = Object.fromEntries(r.authors!.shown.map(a => [a.author.split(' ')[0], a.gapMinutes]));
+    assert.ok(gaps.Fast! < gaps.Slow!, JSON.stringify(gaps));
+    assert.equal(gaps.Rare, r.params.gapMinutes); // too little history: the overall gap
+    assert.equal(r.params.gap.perGroup, true);
+    assert.match(renderText(r), /calibrated per author/);
+    assert.match(renderText(r), /^ {4}Gap: {10}\d+min$/m);
   });
 });
