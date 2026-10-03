@@ -31,6 +31,22 @@ describe('parseArgs', () => {
     assert.equal(o.compare?.label, '2025-02-01..2025-03-01');
   });
 
+  it('parses --scan with and without folders', () => {
+    const bare = parseArgs(['--scan']);
+    assert.deepEqual(bare.scan, { exclude: [], fetch: true, roots: ['.'] });
+    assert.equal(bare.report.repoMode, 'shared');
+
+    const o = parseArgs(['--scan', '.', 'src', '--scan-exclude', 'old', '--no-fetch', '--independent-repos', '--top', '3']);
+    assert.deepEqual(o.scan, { exclude: ['old'], fetch: false, roots: ['.', 'src'] });
+    assert.equal(o.report.repoMode, 'independent');
+    assert.equal(o.report.top, 3);
+  });
+
+  it('--csv only implies --daily without --scan', () => {
+    assert.equal(parseArgs(['--scan', '--csv']).report.daily, false);
+    assert.equal(parseArgs(['--scan', '--csv', '--daily']).report.daily, true);
+  });
+
   it('throws ExitRequest for --help and --version', () => {
     // Commander writes help/version to stdout; silence it for the test.
     const write = process.stdout.write;
@@ -48,7 +64,14 @@ describe('parseArgs', () => {
     [['--bogus'], /unknown option/],
     [['--gap', '-5'], /non-negative/],
     [['--json', '--csv'], /cannot be used with/],
-    [['--top', '3'], /requires --all-authors/],
+    [['--top', '3'], /requires --all-authors or --scan/],
+    [['--scan', '--repo', '.'], /cannot be used with/],
+    [['--scan', '--all-authors'], /cannot be used with/],
+    [['--scan', '--branch', 'main'], /cannot be used with/],
+    [['--scan', '/definitely/not/here'], /--scan path does not exist/],
+    [['--no-fetch'], /--no-fetch requires --scan/],
+    [['--independent-repos'], /--independent-repos requires --scan/],
+    [['--scan-exclude', 'x'], /--scan-exclude requires --scan/],
     [['--all-authors', '--top', '1.5'], /positive integer/],
     [['--branch', '--all'], /must not start with '-'/],
     [['--month', '2025-03', '--last-month'], /only one date range/],

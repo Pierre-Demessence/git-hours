@@ -1,7 +1,11 @@
 export interface CommitEntry {
   author: string;
   email: string;
+  // Full commit hash; used to count a commit once across several repos.
+  hash?: string;
   message: string;
+  // Display name of the repository the commit was read from (--scan only).
+  repo?: string;
   timestamp: number;
 }
 
@@ -34,6 +38,19 @@ export interface EstimateParams {
   gapMinutes: number;
 }
 
+// How --scan splits time between repositories:
+// - shared: one timeline across all repos; a session moving between repos is
+//   counted once and its time goes to the repo of each commit (default);
+// - independent: each repo is estimated on its own and totals are summed, so
+//   work overlapping in time is counted once per repo.
+export type RepoMode = 'shared' | 'independent';
+
+export interface ScanOptions {
+  exclude: string[];
+  fetch: boolean;
+  roots: string[];
+}
+
 export interface ReportOptions {
   allAuthors: boolean;
   autoGap: boolean;
@@ -41,6 +58,7 @@ export interface ReportOptions {
   firstCommitMinutes: number;
   gapMinutes: number;
   heatmap: boolean;
+  repoMode: RepoMode;
   top?: number;
 }
 
@@ -52,5 +70,6 @@ export interface Options {
   format: OutputFormat;
   repo?: string;
   report: ReportOptions;
+  scan?: ScanOptions;
   window: DateWindow;
 }

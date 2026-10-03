@@ -5,6 +5,7 @@ import { Command, Option } from 'commander';
 import pkg from '../package.json' with { type: 'json' };
 import { parseWindowSpec, resolveWindow } from './dates.ts';
 import { ExitRequest, UsageError } from './errors.ts';
+import { expandHome } from './scan.ts';
 
 function parseNonNegativeNumber(name: string) {
   return (value: string): number => {
@@ -15,12 +16,12 @@ function parseNonNegativeNumber(name: string) {
   };
 }
 
-function validateRepoPath(repo: string): void {
-  const abs = resolve(repo);
+function validateDirectory(path: string, flag: string): void {
+  const abs = resolve(expandHome(path));
   if (!existsSync(abs))
-    throw new UsageError(`--repo path does not exist: ${repo}`);
+    throw new UsageError(`--${flag} path does not exist: ${path}`);
   if (!statSync(abs).isDirectory())
-    throw new UsageError(`--repo path is not a directory: ${repo}`);
+    throw new UsageError(`--${flag} path is not a directory: ${path}`);
   // Whether it is a git repository is left to git itself, which also accepts
   // subdirectories of a work tree and bare repositories.
 }
@@ -35,14 +36,18 @@ interface RawOptions {
   csv: boolean;
   daily: boolean;
   excludeAuthor?: string[];
+  fetch: boolean;
   firstCommitCredit: number;
   gap: number;
   heatmap: boolean;
+  independentRepos: boolean;
   json: boolean;
   lastMonth?: boolean;
   lastWeek?: boolean;
   month?: string;
   repo?: string;
+  scan?: boolean | string[];
+  scanExclude?: string[];
   since?: string;
   thisMonth?: boolean;
   thisWeek?: boolean;
@@ -76,7 +81,7 @@ export function parseArgs(argv: string[]): Options {
     .addOption(new Option('--author <name>', 'filter by author name or email (case-insensitive substring match)').conflicts('allAuthors'))
     .option('--all-authors', 'show per-author breakdown', false)
     .option('--exclude-author <name...>', 'exclude commits by author (repeatable, substring match)')
-    .addOption(new Option('--top <n>', 'limit --all-authors to the top N by hours').argParser(parseNonNegativeNumber('top')))
+    .addOption(new Option('--top <n>', 'limit --all-authors (or --scan) to the top N by hours').argParser(parseNonNegativeNumber('top')))
     .addOption(new Option('--branch <name>', 'analyze a specific branch (default: HEAD)').conflicts('allBranches'))
     .option('--all-branches', 'analyze commits reachable from any ref', false)
     .option('--daily', 'include the per-day breakdown', false)
@@ -84,8 +89,12 @@ export function parseArgs(argv: string[]): Options {
     .addOption(new Option('--json', 'output JSON instead of text').conflicts('csv').default(false))
     .addOption(new Option('--csv', 'output daily breakdown as CSV (implies --daily)').conflicts('json').default(false))
     .option('--repo <path>', 'path to git repository (default: current directory)')
+    .addOption(new Option('--scan [dirs...]', 'find git repositories recursively under dirs (default: current directory) and report per project').conflicts(['repo', 'branch', 'allAuthors']))
+    .option('--scan-exclude <pattern...>', 'with --scan: skip folders matching a glob (a name, or a path relative to the scan root if it contains /)')
+    .option('--no-fetch', 'with --scan: do not run `git fetch` in each repository first')
+    .option('--independent-repos', 'with --scan: estimate each repo on its own (overlapping work counts once per repo)', false)
     .option('--compare <window>', 'compare to another window: a shortcut (e.g. last-month), YYYY-MM, or START..END')
-    .addHelpText('after', '\nExamples:\n  git-hours --month 2025-03\n  git-hours --since 2025-03-01 --until 2025-04-01\n  git-hours --week 2025-03-24\n  git-hours --this-week\n  git-hours --last-month\n  git-hours --gap 90 --first-commit-credit 20\n  git-hours --repo ../other-repo\n  git-hours --this-month --compare last-month\n')
+    .addHelpText('after', '\nExamples:\n  git-hours --month 2025-03\n  git-hours --since 2025-03-01 --until 2025-04-01\n  git-hours --week 2025-03-24\n  git-hours --this-week\n  git-hours --last-month\n  git-hours --gap 90 --first-commit-credit 20\n  git-hours --repo ../other-repo\n  git-hours --this-month --compare last-month\n  git-hours --scan ~/dev ~/work --last-month\n')
     .configureOutput({ writeErr: () => {} })
     .exitOverride();
 
@@ -104,15 +113,32 @@ export function parseArgs(argv: string[]): Options {
   if (raw.branch?.startsWith('-'))
     throw new UsageError(`--branch must not start with '-' (got "${raw.branch}")`);
 
+  const scanning = raw.scan !== undefined;
+
   if (raw.top !== undefined) {
     if (!Number.isInteger(raw.top) || raw.top < 1)
       throw new UsageError('--top must be a positive integer');
-    if (!raw.allAuthors)
-      throw new UsageError('--top requires --all-authors');
+    if (!raw.allAuthors && !scanning)
+      throw new UsageError('--top requires --all-authors or --scan');
   }
 
   if (raw.repo !== undefined)
-    validateRepoPath(raw.repo);
+    validateDirectory(raw.repo, 'repo');
+
+  if (!scanning) {
+    const scanOnly = [
+      ['--scan-exclude', raw.scanExclude !== undefined],
+      ['--no-fetch', raw.fetch === false],
+      ['--independent-repos', raw.independentRepos],
+    ] as const;
+    const used = scanOnly.find(([, on]) => on);
+    if (used)
+      throw new UsageError(`${used[0]} requires --scan`);
+  }
+
+  const roots = raw.scan === true ? ['.'] : Array.isArray(raw.scan) ? raw.scan : [];
+  for (const root of roots)
+    validateDirectory(root, 'scan');
 
   const shortcuts = ([
     ['today', raw.today],
@@ -142,12 +168,16 @@ export function parseArgs(argv: string[]): Options {
     report: {
       allAuthors: raw.allAuthors,
       autoGap: raw.autoGap,
-      daily: raw.daily || raw.csv,
+      // --csv implies --daily for a single repo; with --scan, plain --csv is
+      // one row per project and --daily makes it one row per project per day.
+      daily: raw.daily || (raw.csv && !scanning),
       firstCommitMinutes: raw.firstCommitCredit,
       gapMinutes: raw.gap,
       heatmap: raw.heatmap,
+      repoMode: raw.independentRepos ? 'independent' : 'shared',
       top: raw.top,
     },
+    scan: scanning ? { exclude: raw.scanExclude ?? [], fetch: raw.fetch, roots } : undefined,
     window,
   };
 }

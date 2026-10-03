@@ -21,6 +21,10 @@ export class GitError extends CliError {
   }
 }
 
+// The repository exists but has no commits yet. Fatal for a single repo,
+// merely "no activity" when scanning.
+export class EmptyRepoError extends GitError {}
+
 // Help or version was printed; exit cleanly without a message.
 export class ExitRequest extends CliError {
   constructor() {

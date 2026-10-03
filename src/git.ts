@@ -1,8 +1,9 @@
 import type { CommitEntry, CommitFilter, DateWindow } from './types.ts';
 import { Buffer } from 'node:buffer';
 import { spawn } from 'node:child_process';
+import process from 'node:process';
 import { toLocalGitDate } from './dates.ts';
-import { GitError } from './errors.ts';
+import { EmptyRepoError, GitError } from './errors.ts';
 
 // ASCII Unit Separator (0x1F) avoids collisions with `|` or other punctuation
 // that may legitimately appear in author names or commit subjects.
@@ -12,10 +13,11 @@ export function parseLogOutput(raw: string): CommitEntry[] {
   if (!raw)
     return [];
   return raw.split('\n').map((line) => {
-    const [ts, author, email, ...msgParts] = line.split(FS);
+    const [ts, hash, author, email, ...msgParts] = line.split(FS);
     return {
       author,
       email,
+      hash,
       message: msgParts.join(FS),
       timestamp: Number(ts) * 1000,
     };
@@ -41,7 +43,7 @@ export function filterByAuthorDate(commits: CommitEntry[], range: Pick<DateWindo
 
 export function buildLogArgs(filter: CommitFilter, range: Pick<DateWindow, 'since' | 'until'>): string[] {
   // %aN / %aE apply the repo's .mailmap so identity aliases collapse.
-  const args = ['log', `--format=%at${FS}%aN${FS}%aE${FS}%s`, '--no-merges'];
+  const args = ['log', `--format=%at${FS}%H${FS}%aN${FS}%aE${FS}%s`, '--no-merges'];
 
   // git's --since/--until filter on *committer* date, but hours are bucketed
   // by *author* date, so a commit written in February and rebased in March
@@ -61,34 +63,74 @@ export function buildLogArgs(filter: CommitFilter, range: Pick<DateWindow, 'sinc
 }
 
 // Turn git's stderr into a short, user-facing message.
-export function describeGitFailure(stderr: string, repo?: string): string {
+export function describeGitFailure(stderr: string, repo?: string, action = 'read git log'): string {
   if (/not a git repository/i.test(stderr))
     return repo ? `not a git repository: ${repo}` : 'not a git repository (run from inside a repo).';
   if (/does not have any commits yet/i.test(stderr))
     return repo ? `repository has no commits yet: ${repo}` : 'this repository has no commits yet.';
-  return `failed to read git log${repo ? ` in ${repo}` : ''}: ${stderr.trim()}`;
+  return `failed to ${action}${repo ? ` in ${repo}` : ''}: ${stderr.trim()}`;
+}
+
+export interface RunGitOptions {
+  // Used in error messages: "failed to <action> in <repo>".
+  action?: string;
+  // Never let git (or ssh) ask for credentials or host-key confirmation:
+  // fail instead. For unattended network operations like fetch.
+  noPrompt?: boolean;
+  timeoutMs?: number;
 }
 
 // Run git asynchronously and resolve with its stdout. Async (rather than
 // execFileSync) keeps the event loop free for the progress spinner and lets
 // several repositories be read in parallel.
-export function runGit(args: string[], cwd?: string): Promise<string> {
+export function runGit(args: string[], cwd?: string, options: RunGitOptions = {}): Promise<string> {
+  const { action, noPrompt = false, timeoutMs } = options;
   return new Promise((resolve, reject) => {
-    const child = spawn('git', args, { cwd, stdio: ['ignore', 'pipe', 'pipe'] });
+    const child = spawn('git', args, {
+      cwd,
+      // Without a controlling terminal (new session via setsid), ssh cannot
+      // open /dev/tty to ask for a passphrase or confirm a host key, so it
+      // fails fast instead of hanging. GIT_TERMINAL_PROMPT=0 covers HTTPS.
+      detached: noPrompt && process.platform !== 'win32',
+      env: noPrompt ? { ...process.env, GIT_TERMINAL_PROMPT: '0' } : process.env,
+      stdio: ['ignore', 'pipe', 'pipe'],
+      windowsHide: true,
+    });
     const out: Buffer[] = [];
     const err: Buffer[] = [];
+    let timedOut = false;
+    const timer = timeoutMs
+      ? setTimeout(() => {
+          timedOut = true;
+          child.kill();
+        }, timeoutMs)
+      : undefined;
     child.stdout.on('data', (chunk: Buffer) => out.push(chunk));
     child.stderr.on('data', (chunk: Buffer) => err.push(chunk));
     child.on('error', (e: NodeJS.ErrnoException) => {
+      clearTimeout(timer);
       reject(new GitError(e.code === 'ENOENT' ? 'git is not installed or not on PATH' : e.message));
     });
     child.on('close', (code) => {
-      if (code === 0)
+      clearTimeout(timer);
+      if (timedOut) {
+        reject(new GitError(`failed to ${action ?? 'run git'}${cwd ? ` in ${cwd}` : ''}: timed out after ${Math.round(timeoutMs! / 1000)}s`));
+      }
+      else if (code === 0) {
         resolve(Buffer.concat(out).toString('utf-8'));
-      else
-        reject(new GitError(describeGitFailure(Buffer.concat(err).toString('utf-8'), cwd)));
+      }
+      else {
+        const stderr = Buffer.concat(err).toString('utf-8');
+        const ErrorClass = /does not have any commits yet/i.test(stderr) ? EmptyRepoError : GitError;
+        reject(new ErrorClass(describeGitFailure(stderr, cwd, action)));
+      }
     });
   });
+}
+
+// Update all remotes of a repository, never prompting for credentials.
+export async function fetchRepo(repo: string, timeoutMs = 60_000): Promise<void> {
+  await runGit(['fetch', '--all', '--prune', '--quiet'], repo, { action: 'fetch', noPrompt: true, timeoutMs });
 }
 
 // Read the commits of one repository matching `filter` within `range`.

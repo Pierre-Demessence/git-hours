@@ -55,27 +55,34 @@ export function estimateHours(commits: CommitEntry[], params: EstimateParams): S
   };
 }
 
-export function groupByAuthor(commits: CommitEntry[]): Map<string, CommitEntry[]> {
-  const byAuthor = new Map<string, CommitEntry[]>();
+// A grouping of commits: by author, by repository, ...
+export type KeyFn = (c: CommitEntry) => string;
+export const byAuthor: KeyFn = c => `${c.author} <${c.email}>`;
+export const byRepo: KeyFn = c => c.repo ?? '';
+
+export function groupBy(commits: CommitEntry[], keyOf: KeyFn): Map<string, CommitEntry[]> {
+  const groups = new Map<string, CommitEntry[]>();
   for (const c of commits) {
-    const key = `${c.author} <${c.email}>`;
-    const list = byAuthor.get(key) ?? [];
+    const key = keyOf(c);
+    const list = groups.get(key) ?? [];
     list.push(c);
-    byAuthor.set(key, list);
+    groups.set(key, list);
   }
-  return byAuthor;
+  return groups;
 }
 
-export interface AuthorResult {
-  author: string;
+export interface GroupResult {
+  key: string;
   result: SessionResult;
 }
 
-// Per-author estimates, ranked by hours descending.
-export function estimatePerAuthor(commits: CommitEntry[], params: EstimateParams): AuthorResult[] {
-  return [...groupByAuthor(commits).entries()]
-    .map(([author, list]) => ({ author, result: estimateHours(list, params) }))
-    .sort((a, b) => b.result.hours - a.result.hours);
+const byHoursDesc = (a: GroupResult, b: GroupResult) => b.result.hours - a.result.hours;
+
+// Each group estimated on its own, ranked by hours descending.
+export function estimateGroups(commits: CommitEntry[], params: EstimateParams, keyOf: KeyFn): GroupResult[] {
+  return [...groupBy(commits, keyOf).entries()]
+    .map(([key, list]) => ({ key, result: estimateHours(list, params) }))
+    .sort(byHoursDesc);
 }
 
 function emptyResult(): SessionResult {
@@ -109,38 +116,48 @@ export function sumResults(results: SessionResult[]): SessionResult {
   return total;
 }
 
-// Total for the whole selection. With `perAuthor` each author is estimated
-// independently and summed (person-hours), so interleaved commits from
-// different people are never mistaken for one continuous session.
-export function estimateTotal(commits: CommitEntry[], params: EstimateParams, perAuthor = false): SessionResult {
-  if (!perAuthor)
+// Total for the whole selection. With `groupKey`, each group is estimated
+// independently and summed: per author that gives person-hours, so
+// interleaved commits from different people are never mistaken for one
+// continuous session.
+export function estimateTotal(commits: CommitEntry[], params: EstimateParams, groupKey?: KeyFn): SessionResult {
+  if (!groupKey)
     return estimateHours(commits, params);
-  return sumResults(estimatePerAuthor(commits, params).map(a => a.result));
+  return sumResults(estimateGroups(commits, params, groupKey).map(g => g.result));
 }
 
-// Per-day breakdown of a single commit stream, using the same session walk as
-// estimateHours so the days always sum to the total. Elapsed time inside a
-// session that crosses local midnight is split at midnight; the first-commit
-// credit and the session count go to the day of the commit that opens it.
-function dailyForStream(commits: CommitEntry[], params: EstimateParams): Map<string, SessionResult> {
-  const daily = new Map<string, SessionResult>();
-  const bucket = (key: string): SessionResult => {
-    let r = daily.get(key);
+// Walk ONE timeline with the same session rules as estimateHours, crediting
+// time to (key, local day) buckets:
+// - a commit counts in its own key and day;
+// - the first-commit credit and the session count go to the commit that opens
+//   the session;
+// - elapsed time between two commits goes to the key of the commit that ends
+//   it, split at local midnight across days.
+// So all buckets together always sum to estimateHours() of the same commits.
+export function attributeDaily(commits: CommitEntry[], params: EstimateParams, keyOf: KeyFn): Map<string, Map<string, SessionResult>> {
+  const out = new Map<string, Map<string, SessionResult>>();
+  const bucket = (key: string, day: string): SessionResult => {
+    let days = out.get(key);
+    if (!days) {
+      days = new Map();
+      out.set(key, days);
+    }
+    let r = days.get(day);
     if (!r) {
       r = emptyResult();
-      daily.set(key, r);
+      days.set(day, r);
     }
     return r;
   };
   const MS_PER_HOUR = 60 * 60 * 1000;
 
-  const addSpan = (start: number, end: number): void => {
+  const addSpan = (key: string, start: number, end: number): void => {
     let t = start;
     while (t < end) {
       const d = new Date(t);
       const nextMidnight = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1).getTime();
       const segEnd = Math.min(end, nextMidnight);
-      bucket(dateKey(t)).hours += (segEnd - t) / MS_PER_HOUR;
+      bucket(key, dateKey(t)).hours += (segEnd - t) / MS_PER_HOUR;
       t = segEnd;
     }
   };
@@ -150,37 +167,64 @@ function dailyForStream(commits: CommitEntry[], params: EstimateParams): Map<str
   const firstCommitHours = params.firstCommitMinutes / 60;
 
   for (let i = 0; i < sorted.length; i++) {
-    const ts = sorted[i].timestamp;
-    const day = bucket(dateKey(ts));
-    const at = new Date(ts);
+    const c = sorted[i];
+    const key = keyOf(c);
+    const day = bucket(key, dateKey(c.timestamp));
+    const at = new Date(c.timestamp);
     day.commits++;
     day.firstCommit = minDate(day.firstCommit, at);
     day.lastCommit = maxDate(day.lastCommit, at);
 
     const prev = i > 0 ? sorted[i - 1].timestamp : null;
-    if (prev === null || ts - prev > gapMs) {
+    if (prev === null || c.timestamp - prev > gapMs) {
       day.sessions++;
       day.hours += firstCommitHours;
     }
     else {
-      addSpan(prev, ts);
+      addSpan(key, prev, c.timestamp);
     }
   }
-  return daily;
+  return out;
 }
 
-// Per-day breakdown; with `perAuthor` it is the sum of each author's own
-// breakdown, so it always adds up to estimateTotal() with the same flag.
-export function computeDailyBreakdown(commits: CommitEntry[], params: EstimateParams, perAuthor = false): Map<string, SessionResult> {
-  if (!perAuthor)
-    return dailyForStream(commits, params);
+// Groups sharing one timeline (see attributeDaily), ranked by hours. Unlike
+// estimateGroups, a session that moves between groups is counted once, so
+// the groups sum exactly to estimateHours() of all commits.
+export function attributeGroups(commits: CommitEntry[], params: EstimateParams, keyOf: KeyFn): GroupResult[] {
+  return [...attributeDaily(commits, params, keyOf).entries()]
+    .map(([key, days]) => ({ key, result: sumResults([...days.values()]) }))
+    .sort(byHoursDesc);
+}
+
+function dailyForStream(commits: CommitEntry[], params: EstimateParams): Map<string, SessionResult> {
+  return attributeDaily(commits, params, () => '').get('') ?? new Map();
+}
+
+function mergeDaily(maps: Iterable<Map<string, SessionResult>>): Map<string, SessionResult> {
   const merged = new Map<string, SessionResult>();
-  for (const list of groupByAuthor(commits).values()) {
-    for (const [day, r] of dailyForStream(list, params)) {
+  for (const map of maps) {
+    for (const [day, r] of map) {
       const target = merged.get(day) ?? emptyResult();
       addInto(target, r);
       merged.set(day, target);
     }
   }
   return merged;
+}
+
+// Per-day breakdown. Sessions crossing midnight are split between the days.
+// With `groupKey` it is the sum of each group's own breakdown, so it always
+// adds up to estimateTotal() with the same grouping.
+export function computeDailyBreakdown(commits: CommitEntry[], params: EstimateParams, groupKey?: KeyFn): Map<string, SessionResult> {
+  if (!groupKey)
+    return dailyForStream(commits, params);
+  return mergeDaily([...groupBy(commits, groupKey).values()].map(list => dailyForStream(list, params)));
+}
+
+// Per-group, per-day breakdown: on one shared timeline (`shared`) or with
+// each group estimated on its own.
+export function dailyByGroup(commits: CommitEntry[], params: EstimateParams, keyOf: KeyFn, shared: boolean): Map<string, Map<string, SessionResult>> {
+  if (shared)
+    return attributeDaily(commits, params, keyOf);
+  return new Map([...groupBy(commits, keyOf).entries()].map(([key, list]) => [key, dailyForStream(list, params)]));
 }

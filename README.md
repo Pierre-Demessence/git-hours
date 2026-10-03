@@ -46,7 +46,7 @@ git-hours [options]
 | `--author <name>` | Filter by author name or email (case-insensitive substring match) |
 | `--all-authors` | Show per-author breakdown |
 | `--exclude-author <name...>` | Exclude commits by author (repeatable, substring match) |
-| `--top <n>` | Limit `--all-authors` to the top N authors by hours |
+| `--top <n>` | Limit `--all-authors` (or `--scan`) to the top N authors (projects) by hours |
 | `--branch <name>` | Analyze a specific branch (default: HEAD) |
 | `--all-branches` | Analyze commits reachable from any ref (includes remote-tracking refs — see note below) |
 | `--daily` | Include the per-day breakdown (off by default) |
@@ -54,6 +54,10 @@ git-hours [options]
 | `--json` | Emit machine-readable JSON instead of human text |
 | `--csv` | Emit the daily breakdown as CSV (implies `--daily`) |
 | `--repo <path>` | Path to git repository (default: current directory) |
+| `--scan [dirs...]` | Find git repositories recursively under `dirs` (default: current directory) and report per project — see [Scanning several projects](#scanning-several-projects) |
+| `--scan-exclude <pattern...>` | With `--scan`: skip folders matching a glob (`*`, `**`, `?`) |
+| `--no-fetch` | With `--scan`: don't `git fetch` each repository first |
+| `--independent-repos` | With `--scan`: estimate each repository on its own instead of on one shared timeline |
 | `--compare <window>` | Compare against another window: a shortcut (`last-month`, `last-week`, `this-month`, `this-week`, `today`, `yesterday`), `YYYY-MM`, or `START..END` (end exclusive, either side optional, e.g. `2025-03-01..2025-03-08`) |
 | `-h`, `--help` | Show help |
 | `-v`, `--version` | Show the version |
@@ -86,6 +90,54 @@ this is fine. If you fetch from a shared remote, single-author totals can be
 silently inflated by teammates' commits that exist on remote refs but never
 landed in your local branches. Combine with `--author <name>` (or `--exclude-author`)
 to scope to your own work.
+
+## Scanning several projects
+
+```sh
+git-hours --scan ~/dev ~/work --last-month --all-branches --author me@example.com
+```
+
+```
+⏱  Git Hours — last-month (2026-09-01..2026-10-01)
+   Gap threshold: 120min | First-commit credit: 30min
+
+  Scanned 37 repos in ~/dev, ~/work · 3 with activity
+
+  Project               Time  Commits  Sessions  First       Last
+  ────────────────  ────────  ───────  ────────  ──────────  ──────────
+  clients/acme/api   31h 20m      142        18  2026-09-01  2026-09-30
+  clients/acme/web   12h 05m       61         9  2026-09-03  2026-09-24
+  dev/git-hours       6h 40m       38         5  2026-09-12  2026-09-28
+  ────────────────  ────────  ───────  ────────  ──────────  ──────────
+  Total              50h 05m      241        32  2026-09-01  2026-09-30
+```
+
+- **Discovery.** Every folder under the given roots is searched. A folder with
+  a `.git` (directory or file) or a bare repository counts as a project, and
+  the search does not go inside it. Hidden folders, `node_modules` and symlinks
+  are skipped. `--scan-exclude` skips more: a pattern without `/` matches a
+  folder name at any depth (`--scan-exclude archive`), one with `/` matches a
+  path relative to the scan root (`--scan-exclude 'clients/*/legacy'`).
+- **Fetching.** Each repository is fetched first (`git fetch --all --prune`,
+  8 at a time, never prompting for credentials, 60s timeout) so work pushed
+  from another machine is included; it lives on remote branches, so combine
+  with `--all-branches`. A failed fetch is a warning, not an error.
+  `--no-fetch` skips it.
+- **One timeline (default).** All projects' commits are estimated as one
+  stream, so a session that hops between projects is counted once. Time between
+  two commits goes to the project of the later commit, the first-commit credit
+  to the project that opens the session. Projects therefore add up exactly to
+  the total. **Sessions** counts the sessions *started* in a project.
+- **`--independent-repos`** estimates each project on its own instead; the
+  total is their sum, so overlapping work is counted once per project.
+- A commit present in several repositories (a fork and its upstream, two
+  clones, a worktree) is counted once, in the first project by name.
+- A repository that can't be read is skipped with a warning; empty ones are
+  just inactive.
+- `--daily`, `--heatmap` and `--compare` work on the combined data. `--json`
+  adds `scan` and `perRepo` (with per-project `daily` when `--daily` is set);
+  `--csv` gives one row per project, or one per project per day with `--daily`.
+- `--scan` cannot be combined with `--repo`, `--branch` or `--all-authors`.
 
 ## Tests
 
@@ -127,6 +179,7 @@ src/
   dates.ts        # date windows: shortcuts, months, weeks, START..END specs
   git.ts          # async git log reading (readCommits) and parsing
   progress.ts     # stderr spinner (TTY only)
+  scan.ts         # --scan: repository discovery, parallel fetch/read, de-duplication
   estimate.ts     # session math (estimateHours, estimateTotal, computeDailyBreakdown, pickAutoGap)
   report.ts       # buildReport(): commits → Report (totals, authors, daily, heatmap, compare)
   render/
