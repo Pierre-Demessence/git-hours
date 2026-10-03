@@ -1,7 +1,7 @@
-import type { CommitEntry, Options, SessionResult } from './types.ts';
+import type { Options, SessionResult } from './types.ts';
 import process from 'node:process';
 import { parseArgs } from './cli.ts';
-import { computeDailyBreakdown, estimateHours, pickAutoGap } from './estimate.ts';
+import { computeDailyBreakdown, estimateHours, estimatePerAuthor, pickAutoGap, sumResults } from './estimate.ts';
 import { formatHours } from './format.ts';
 import { getCommits } from './git.ts';
 import { printHeatmap } from './heatmap.ts';
@@ -46,7 +46,6 @@ function main(): void {
   if (opts.format === 'json') {
     if (opts.compare) {
       const compareCommits = getCommits({ ...opts, since: opts.compare.since, until: opts.compare.until });
-      // Re-use printJson by extending payload via temporary side channel? Simpler: build payload inline.
       const current = estimateHours(commits, opts);
       const compare = estimateHours(compareCommits, { ...opts, since: opts.compare.since, until: opts.compare.until });
       const dh = current.hours - compare.hours;
@@ -74,28 +73,23 @@ function main(): void {
   console.log(`   Gap threshold: ${gapLabel} | First-commit credit: ${opts.firstCommitMinutes}min\n`);
 
   if (opts.allAuthors) {
-    const byAuthor = new Map<string, CommitEntry[]>();
-    for (const c of commits) {
-      const key = `${c.author} <${c.email}>`;
-      const list = byAuthor.get(key) ?? [];
-      list.push(c);
-      byAuthor.set(key, list);
-    }
-
-    let grandTotal = 0;
-    const ranked = [...byAuthor.entries()]
-      .map(([author, authorCommits]) => ({ author, result: estimateHours(authorCommits, opts) }))
-      .sort((a, b) => b.result.hours - a.result.hours);
+    const ranked = estimatePerAuthor(commits, opts);
     const totalAuthors = ranked.length;
     const shown = opts.top ? ranked.slice(0, opts.top) : ranked;
     for (const { author, result } of shown) {
       printResult(author, result);
-      grandTotal += result.hours;
       console.log();
     }
-    if (opts.top && opts.top < totalAuthors)
+    // The grand total always covers every author, matching the JSON `total`;
+    // --top only limits which authors are listed.
+    const grandTotal = sumResults(ranked.map(a => a.result)).hours;
+    if (opts.top && opts.top < totalAuthors) {
       console.log(`  (showing top ${shown.length} of ${totalAuthors} authors)`);
-    console.log(`  Grand total: ${formatHours(grandTotal)}\n`);
+      console.log(`  Grand total (all ${totalAuthors} authors): ${formatHours(grandTotal)}\n`);
+    }
+    else {
+      console.log(`  Grand total: ${formatHours(grandTotal)}\n`);
+    }
   }
   else {
     const result = estimateHours(commits, opts);

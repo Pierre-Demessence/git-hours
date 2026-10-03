@@ -57,6 +57,23 @@ describe('buildJsonPayload', () => {
     assert.equal(p.perAuthor.length, 2);
     assert.equal(p.totalAuthors, 3);
   });
+
+  // Regression: `total` used to estimate all authors' commits as one merged
+  // stream, disagreeing with the text output's sum of per-author hours.
+  it('uses the sum over all authors as total, regardless of --top', () => {
+    const t = Date.UTC(2025, 0, 1, 9);
+    const commits = [
+      commit(t, 'Alice', 'a@x'),
+      commit(t + 10 * 60_000, 'Bob', 'b@x'),
+      commit(t + 60 * 60_000, 'Alice', 'a@x'),
+    ];
+    const p = buildJsonPayload(commits, { ...baseOpts, allAuthors: true, top: 1 }) as {
+      perAuthor: Array<{ hours: number }>;
+      total: { hours: number };
+    };
+    assert.equal(p.perAuthor.length, 1);
+    assert.equal(p.total.hours, 2); // Alice 1h30 + Bob 30m
+  });
 });
 
 describe('formatCsv', () => {

@@ -28,6 +28,7 @@ jobs:
       # --ignore-scripts skips the `prepare` build; lint doesn't need dist/.
       - run: npm ci --ignore-scripts
       - run: npm run lint
+      - run: npm run typecheck
 
   test:
     name: test (node ${{ matrix.node }})

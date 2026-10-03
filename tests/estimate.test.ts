@@ -1,7 +1,7 @@
 import type { CommitEntry, Options } from '../src/types.ts';
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { computeDailyBreakdown, estimateHours, pickAutoGap } from '../src/estimate.ts';
+import { computeDailyBreakdown, estimateHours, estimateTotal, pickAutoGap } from '../src/estimate.ts';
 
 const baseOpts: Options = {
   allAuthors: false,
@@ -58,8 +58,8 @@ describe('estimateHours', () => {
 
   it('sorts commits before estimating', () => {
     const r = estimateHours([commit(60 * 60 * 1000), commit(0)], baseOpts);
-    assert.equal(r.firstCommit.getTime(), 0);
-    assert.equal(r.lastCommit.getTime(), 60 * 60 * 1000);
+    assert.equal(r.firstCommit?.getTime(), 0);
+    assert.equal(r.lastCommit?.getTime(), 60 * 60 * 1000);
   });
 });
 
@@ -74,6 +74,49 @@ describe('computeDailyBreakdown', () => {
     assert.equal(daily.size, 2);
     assert.equal(daily.get('2025-03-05')?.commits, 2);
     assert.equal(daily.get('2025-03-06')?.commits, 1);
+  });
+
+  const sumHours = (m: Map<string, { hours: number }>) => [...m.values()].reduce((s, r) => s + r.hours, 0);
+
+  // Regression: days used to be estimated independently, so a session crossing
+  // midnight got the first-commit credit twice and lost the elapsed time.
+  it('splits a session crossing midnight and sums to the total', () => {
+    const commits = [commit(new Date(2025, 2, 5, 23, 30).getTime()), commit(new Date(2025, 2, 6, 0, 30).getTime())];
+    const daily = computeDailyBreakdown(commits, baseOpts);
+    assert.equal(daily.get('2025-03-05')?.hours, 1); // 30min credit + 30min to midnight
+    assert.equal(daily.get('2025-03-06')?.hours, 0.5); // 30min after midnight
+    assert.equal(daily.get('2025-03-05')?.sessions, 1);
+    assert.equal(daily.get('2025-03-06')?.sessions, 0);
+    assert.equal(sumHours(daily), estimateHours(commits, baseOpts).hours);
+  });
+
+  it('sums to the per-author total with --all-authors', () => {
+    const t = new Date(2025, 2, 5, 9).getTime();
+    const min = 60_000;
+    const commits = [commit(t, 'a'), commit(t + 10 * min, 'b'), commit(t + 50 * min, 'a'), commit(t + 70 * min, 'b')];
+    const opts = { ...baseOpts, allAuthors: true };
+    assert.ok(Math.abs(sumHours(computeDailyBreakdown(commits, opts)) - estimateTotal(commits, opts).hours) < 1e-9);
+  });
+});
+
+describe('estimateTotal', () => {
+  it('sums per-author estimates with --all-authors', () => {
+    const t = new Date(2025, 2, 5, 9).getTime();
+    const min = 60_000;
+    // Interleaved: merged as one stream it would be 30 + 60 = 90min; per author
+    // it is (30 + 60) + (30 + 60) = 180min of person-time.
+    const commits = [commit(t, 'a'), commit(t + 10 * min, 'b'), commit(t + 60 * min, 'a'), commit(t + 70 * min, 'b')];
+    const r = estimateTotal(commits, { ...baseOpts, allAuthors: true });
+    assert.equal(r.hours, 3);
+    assert.equal(r.commits, 4);
+    assert.equal(r.sessions, 2);
+    assert.equal(r.firstCommit?.getTime(), t);
+    assert.equal(r.lastCommit?.getTime(), t + 70 * min);
+  });
+
+  it('matches estimateHours without --all-authors', () => {
+    const commits = [commit(0, 'a'), commit(60_000, 'b')];
+    assert.deepEqual(estimateTotal(commits, baseOpts), estimateHours(commits, baseOpts));
   });
 });
 

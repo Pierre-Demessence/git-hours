@@ -55,18 +55,130 @@ export function estimateHours(commits: CommitEntry[], opts: Options): SessionRes
   };
 }
 
-export function computeDailyBreakdown(commits: CommitEntry[], opts: Options): Map<string, SessionResult> {
-  const byDay = new Map<string, CommitEntry[]>();
+export function groupByAuthor(commits: CommitEntry[]): Map<string, CommitEntry[]> {
+  const byAuthor = new Map<string, CommitEntry[]>();
   for (const c of commits) {
-    const key = dateKey(c.timestamp);
-    const list = byDay.get(key) ?? [];
+    const key = `${c.author} <${c.email}>`;
+    const list = byAuthor.get(key) ?? [];
     list.push(c);
-    byDay.set(key, list);
+    byAuthor.set(key, list);
   }
+  return byAuthor;
+}
 
+export interface AuthorResult {
+  author: string;
+  result: SessionResult;
+}
+
+// Per-author estimates, ranked by hours descending.
+export function estimatePerAuthor(commits: CommitEntry[], opts: Options): AuthorResult[] {
+  return [...groupByAuthor(commits).entries()]
+    .map(([author, list]) => ({ author, result: estimateHours(list, opts) }))
+    .sort((a, b) => b.result.hours - a.result.hours);
+}
+
+function emptyResult(): SessionResult {
+  return { commits: 0, firstCommit: null, hours: 0, lastCommit: null, sessions: 0 };
+}
+
+function minDate(a: Date | null, b: Date | null): Date | null {
+  if (!a || !b)
+    return a ?? b;
+  return a.getTime() <= b.getTime() ? a : b;
+}
+
+function maxDate(a: Date | null, b: Date | null): Date | null {
+  if (!a || !b)
+    return a ?? b;
+  return a.getTime() >= b.getTime() ? a : b;
+}
+
+function addInto(target: SessionResult, r: SessionResult): void {
+  target.commits += r.commits;
+  target.hours += r.hours;
+  target.sessions += r.sessions;
+  target.firstCommit = minDate(target.firstCommit, r.firstCommit);
+  target.lastCommit = maxDate(target.lastCommit, r.lastCommit);
+}
+
+export function sumResults(results: SessionResult[]): SessionResult {
+  const total = emptyResult();
+  for (const r of results)
+    addInto(total, r);
+  return total;
+}
+
+// Total for the whole selection. With --all-authors each author is estimated
+// independently and summed (person-hours), so interleaved commits from
+// different people are never mistaken for one continuous session.
+export function estimateTotal(commits: CommitEntry[], opts: Options): SessionResult {
+  if (!opts.allAuthors)
+    return estimateHours(commits, opts);
+  return sumResults(estimatePerAuthor(commits, opts).map(a => a.result));
+}
+
+// Per-day breakdown of a single commit stream, using the same session walk as
+// estimateHours so the days always sum to the total. Elapsed time inside a
+// session that crosses local midnight is split at midnight; the first-commit
+// credit and the session count go to the day of the commit that opens it.
+function dailyForStream(commits: CommitEntry[], opts: Options): Map<string, SessionResult> {
   const daily = new Map<string, SessionResult>();
-  for (const [day, dayCommits] of byDay) {
-    daily.set(day, estimateHours(dayCommits, opts));
+  const bucket = (key: string): SessionResult => {
+    let r = daily.get(key);
+    if (!r) {
+      r = emptyResult();
+      daily.set(key, r);
+    }
+    return r;
+  };
+  const MS_PER_HOUR = 60 * 60 * 1000;
+
+  const addSpan = (start: number, end: number): void => {
+    let t = start;
+    while (t < end) {
+      const d = new Date(t);
+      const nextMidnight = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1).getTime();
+      const segEnd = Math.min(end, nextMidnight);
+      bucket(dateKey(t)).hours += (segEnd - t) / MS_PER_HOUR;
+      t = segEnd;
+    }
+  };
+
+  const sorted = [...commits].sort((a, b) => a.timestamp - b.timestamp);
+  const gapMs = opts.gapMinutes * 60 * 1000;
+  const firstCommitHours = opts.firstCommitMinutes / 60;
+
+  for (let i = 0; i < sorted.length; i++) {
+    const ts = sorted[i].timestamp;
+    const day = bucket(dateKey(ts));
+    const at = new Date(ts);
+    day.commits++;
+    day.firstCommit = minDate(day.firstCommit, at);
+    day.lastCommit = maxDate(day.lastCommit, at);
+
+    const prev = i > 0 ? sorted[i - 1].timestamp : null;
+    if (prev === null || ts - prev > gapMs) {
+      day.sessions++;
+      day.hours += firstCommitHours;
+    }
+    else {
+      addSpan(prev, ts);
+    }
   }
   return daily;
+}
+
+export function computeDailyBreakdown(commits: CommitEntry[], opts: Options): Map<string, SessionResult> {
+  if (!opts.allAuthors)
+    return dailyForStream(commits, opts);
+  const merged = new Map<string, SessionResult>();
+  for (const list of groupByAuthor(commits).values()) {
+    for (const [day, r] of dailyForStream(list, opts)) {
+      const target = merged.get(day) ?? emptyResult();
+      addInto(target, r);
+      merged.set(day, target);
+    }
+  }
+  return merged;
 }
