@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { Buffer } from 'node:buffer';
 import { describe, it } from 'node:test';
-import { applyExcludeAuthors, extractGitErrorMessage, parseLogOutput } from '../src/git.ts';
+import { applyExcludeAuthors, extractGitErrorMessage, filterByAuthorDate, parseLogOutput } from '../src/git.ts';
 
 const FS = '\x1F';
 
@@ -91,5 +91,18 @@ describe('extractGitErrorMessage', () => {
   it('handles non-Error throws', () => {
     assert.equal(extractGitErrorMessage('weird'), 'weird');
     assert.equal(extractGitErrorMessage(null), 'null');
+  });
+});
+
+describe('filterByAuthorDate', () => {
+  const at = (timestamp: number) => ({ author: 'a', email: 'a@x', message: '', timestamp });
+  const commits = [at(100), at(200), at(300)];
+
+  it('keeps everything without bounds', () => {
+    assert.equal(filterByAuthorDate(commits, null, null).length, 3);
+  });
+
+  it('uses an inclusive start and exclusive end', () => {
+    assert.deepEqual(filterByAuthorDate(commits, 200, 300).map(c => c.timestamp), [200]);
   });
 });

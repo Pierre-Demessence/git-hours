@@ -1,6 +1,8 @@
 export function formatHours(hours: number): string {
-  const h = Math.floor(hours);
-  const m = Math.round((hours - h) * 60);
+  // Round to whole minutes first so e.g. 1.9999h renders as 02h 00m, not 01h 60m.
+  const totalMinutes = Math.round(hours * 60);
+  const h = Math.floor(totalMinutes / 60);
+  const m = totalMinutes % 60;
   return `${String(h).padStart(2, '0')}h ${String(m).padStart(2, '0')}m`;
 }
 
@@ -12,6 +14,30 @@ export function formatDateTime(date: Date): string {
   const d = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
   const t = `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}:${String(date.getSeconds()).padStart(2, '0')}`;
   return `${d} ${t}`;
+}
+
+// Format a Date as a bare local-time string (no Z, no T): "YYYY-MM-DD HH:mm:ss".
+// Git interprets this as local time, matching the local-time bucketing used by
+// dateKey(). Using .toISOString() (UTC, with Z) would silently shift commits
+// across day boundaries for non-UTC users.
+export function toLocalGitDate(d: Date): string {
+  return formatDateTime(d);
+}
+
+// Parse a user-supplied date bound to epoch ms, or null if invalid.
+// A bare YYYY-MM-DD means local midnight: `Date.parse` would treat it as UTC,
+// and git would treat it as that day at the *current* time of day.
+export function parseDateBound(value: string): number | null {
+  const m = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (m) {
+    const [y, mo, d] = m.slice(1).map(Number);
+    const date = new Date(y, mo - 1, d);
+    if (date.getFullYear() !== y || date.getMonth() !== mo - 1 || date.getDate() !== d)
+      return null;
+    return date.getTime();
+  }
+  const t = Date.parse(value);
+  return Number.isNaN(t) ? null : t;
 }
 
 export function dateKey(ts: number): string {

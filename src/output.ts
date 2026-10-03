@@ -1,6 +1,6 @@
 import type { CommitEntry, Options, SessionResult } from './types.ts';
 import process from 'node:process';
-import { computeDailyBreakdown, estimateHours } from './estimate.ts';
+import { computeDailyBreakdown, estimatePerAuthor, estimateTotal } from './estimate.ts';
 import { dayName, isoWeekNumber } from './format.ts';
 import { computeHeatmap } from './heatmap.ts';
 
@@ -23,7 +23,7 @@ function toJsonResult(r: SessionResult): JsonResult {
 }
 
 export function buildJsonPayload(commits: CommitEntry[], opts: Options): Record<string, unknown> {
-  const total = estimateHours(commits, opts);
+  const total = estimateTotal(commits, opts);
   const payload: Record<string, unknown> = {
     range: { since: opts.since ?? null, until: opts.until ?? null },
     params: {
@@ -35,16 +35,8 @@ export function buildJsonPayload(commits: CommitEntry[], opts: Options): Record<
   };
 
   if (opts.allAuthors) {
-    const byAuthor = new Map<string, CommitEntry[]>();
-    for (const c of commits) {
-      const key = `${c.author} <${c.email}>`;
-      const list = byAuthor.get(key) ?? [];
-      list.push(c);
-      byAuthor.set(key, list);
-    }
-    const ranked = [...byAuthor.entries()]
-      .map(([author, list]) => ({ author, ...toJsonResult(estimateHours(list, opts)) }))
-      .sort((a, b) => b.hours - a.hours);
+    const ranked = estimatePerAuthor(commits, opts)
+      .map(({ author, result }) => ({ author, ...toJsonResult(result) }));
     payload.perAuthor = opts.top ? ranked.slice(0, opts.top) : ranked;
     payload.totalAuthors = ranked.length;
   }

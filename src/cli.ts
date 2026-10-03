@@ -1,9 +1,10 @@
 import type { Options } from './types.ts';
 import { existsSync, statSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { resolve } from 'node:path';
 import process from 'node:process';
 import { Command, Option } from 'commander';
 import pkg from '../package.json' with { type: 'json' };
+import { parseDateBound, toLocalGitDate } from './format.ts';
 
 function parsePositiveNumber(name: string) {
   return (value: string): number => {
@@ -16,8 +17,7 @@ function parsePositiveNumber(name: string) {
 }
 
 function validateIsoDate(value: string, flag: string): void {
-  const t = Date.parse(value);
-  if (Number.isNaN(t)) {
+  if (parseDateBound(value) === null) {
     console.error(`git-hours: --${flag} must be a valid date, got "${value}"`);
     process.exit(2);
   }
@@ -33,30 +33,12 @@ function validateRepoPath(repo: string): void {
     console.error(`git-hours: --repo path is not a directory: ${repo}`);
     process.exit(2);
   }
-  // `.git` is a directory in normal repos, but a regular file in worktrees,
-  // submodules, and bare-via-gitfile setups — both are valid here.
-  if (!existsSync(join(abs, '.git'))) {
-    console.error(`git-hours: --repo is not a git repository (no .git found): ${repo}`);
-    process.exit(2);
-  }
+  // Whether it is a git repository is left to git itself, which also accepts
+  // subdirectories of a work tree and bare repositories.
 }
 
 function startOfDay(d: Date): Date {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate());
-}
-
-// Format a Date as a bare local-time string (no Z, no T): "YYYY-MM-DD HH:mm:ss".
-// Git interprets this as local time, matching the local-time bucketing used by
-// dateKey() in format.ts. Using .toISOString() (UTC, with Z) would silently
-// shift commits across day boundaries for non-UTC users.
-function toLocalGitDate(d: Date): string {
-  const y = d.getFullYear();
-  const mo = String(d.getMonth() + 1).padStart(2, '0');
-  const da = String(d.getDate()).padStart(2, '0');
-  const hh = String(d.getHours()).padStart(2, '0');
-  const mm = String(d.getMinutes()).padStart(2, '0');
-  const ss = String(d.getSeconds()).padStart(2, '0');
-  return `${y}-${mo}-${da} ${hh}:${mm}:${ss}`;
 }
 
 function startOfWeek(d: Date): Date {
@@ -163,7 +145,7 @@ export function parseArgs(argv: string[]): Options {
     .addOption(new Option('--gap <minutes>', 'max gap between commits in a session').default(120).argParser(parsePositiveNumber('gap')))
     .addOption(new Option('--first-commit-credit <minutes>', 'time credited for the first commit in a session').default(30).argParser(parsePositiveNumber('first-commit-credit')))
     .addOption(new Option('--auto-gap', 'auto-pick gap from commit cadence (P90 of inter-commit deltas)').conflicts('gap').default(false))
-    .addOption(new Option('--author <name>', 'filter by author name (substring match)').conflicts('allAuthors'))
+    .addOption(new Option('--author <name>', 'filter by author name or email (case-insensitive substring match)').conflicts('allAuthors'))
     .option('--all-authors', 'show per-author breakdown', false)
     .option('--exclude-author <name...>', 'exclude commits by author (repeatable, substring match)')
     .addOption(new Option('--top <n>', 'limit --all-authors to the top N by hours').argParser(parsePositiveNumber('top')))
@@ -260,6 +242,19 @@ export function parseArgs(argv: string[]): Options {
     validateIsoDate(raw.since, 'since');
   if (raw.until)
     validateIsoDate(raw.until, 'until');
+  if (raw.since && raw.until && parseDateBound(raw.since)! >= parseDateBound(raw.until)!) {
+    console.error('git-hours: --since must be before --until');
+    process.exit(2);
+  }
+
+  if (raw.month && raw.week) {
+    console.error('git-hours: --month and --week are mutually exclusive');
+    process.exit(2);
+  }
+  if ((raw.month || raw.week) && (raw.since || raw.until)) {
+    console.error(`git-hours: --${raw.month ? 'month' : 'week'} cannot be combined with --since/--until`);
+    process.exit(2);
+  }
 
   if (raw.month) {
     if (!/^\d{4}-\d{2}$/.test(raw.month)) {

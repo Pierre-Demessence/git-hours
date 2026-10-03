@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { dateKey, dayName, formatHours, formatTimeOfDay, isoWeekNumber } from '../src/format.ts';
+import { dateKey, dayName, formatHours, formatTimeOfDay, isoWeekNumber, parseDateBound } from '../src/format.ts';
 
 describe('formatHours', () => {
   it('formats whole hours', () => {
@@ -17,6 +17,12 @@ describe('formatHours', () => {
 
   it('handles zero', () => {
     assert.equal(formatHours(0), '00h 00m');
+  });
+
+  // Regression: minutes used to be rounded after flooring hours → "01h 60m".
+  it('carries rounded minutes into the hour', () => {
+    assert.equal(formatHours(1.9999), '02h 00m');
+    assert.equal(formatHours(0.999), '01h 00m');
   });
 });
 
@@ -61,5 +67,22 @@ describe('formatTimeOfDay', () => {
   });
   it('handles late hours', () => {
     assert.equal(formatTimeOfDay(new Date(2026, 0, 1, 23, 59)), '23:59');
+  });
+});
+
+describe('parseDateBound', () => {
+  // Regression: a bare date must mean local midnight, not UTC midnight (Date.parse)
+  // nor "that day at the current time of day" (git's approxidate).
+  it('parses a bare YYYY-MM-DD as local midnight', () => {
+    assert.equal(parseDateBound('2025-03-01'), new Date(2025, 2, 1).getTime());
+  });
+
+  it('parses local date-time strings', () => {
+    assert.equal(parseDateBound('2025-03-01 10:30:00'), new Date(2025, 2, 1, 10, 30).getTime());
+  });
+
+  it('rejects invalid dates', () => {
+    assert.equal(parseDateBound('not a date'), null);
+    assert.equal(parseDateBound('2025-02-30'), null);
   });
 });

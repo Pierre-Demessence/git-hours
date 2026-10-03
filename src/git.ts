@@ -2,6 +2,7 @@ import type { CommitEntry, Options } from './types.ts';
 import { Buffer } from 'node:buffer';
 import { execFileSync } from 'node:child_process';
 import process from 'node:process';
+import { parseDateBound, toLocalGitDate } from './format.ts';
 
 // ASCII Unit Separator (0x1F) avoids collisions with `|` or other punctuation
 // that may legitimately appear in author names or commit subjects.
@@ -49,16 +50,32 @@ export function applyExcludeAuthors(commits: CommitEntry[], excludes: string[]):
   });
 }
 
+// Keep commits whose *author* date falls in [sinceMs, untilMs).
+export function filterByAuthorDate(commits: CommitEntry[], sinceMs: number | null, untilMs: number | null): CommitEntry[] {
+  return commits.filter(c =>
+    (sinceMs === null || c.timestamp >= sinceMs)
+    && (untilMs === null || c.timestamp < untilMs));
+}
+
 export function getCommits(opts: Options): CommitEntry[] {
   // %aN / %aE apply the repo's .mailmap so identity aliases collapse.
   const args = ['log', `--format=%at${FS}%aN${FS}%aE${FS}%s`, '--no-merges'];
 
-  if (opts.since)
-    args.push(`--since=${opts.since}`);
-  if (opts.until)
-    args.push(`--until=${opts.until}`);
+  // Range bounds are parsed here (not by git) so a bare YYYY-MM-DD means local
+  // midnight; git would use the current time of day instead.
+  const sinceMs = opts.since ? parseDateBound(opts.since) : null;
+  const untilMs = opts.until ? parseDateBound(opts.until) : null;
+
+  // git's --since/--until filter on *committer* date, but hours are bucketed
+  // by *author* date, so a commit written in February and rebased in March
+  // would leak into March. The committer date is (practically) never earlier
+  // than the author date, so --since is still a safe lower bound that lets git
+  // stop walking early; the exact range is applied on author date below.
+  if (sinceMs !== null)
+    args.push(`--since=${toLocalGitDate(new Date(sinceMs))}`);
   if (opts.author)
-    args.push(`--author=${opts.author}`);
+    // Fixed-string, case-insensitive: a substring match like --exclude-author.
+    args.push('--fixed-strings', '--regexp-ignore-case', `--author=${opts.author}`);
   if (opts.allBranches)
     args.push('--all');
   else if (opts.branch)
@@ -85,7 +102,9 @@ export function getCommits(opts: Options): CommitEntry[] {
     clearProgress();
     const message = extractGitErrorMessage(err);
     if (/not a git repository/i.test(message)) {
-      console.error('git-hours: not a git repository (run from inside a repo).');
+      console.error(opts.repo
+        ? `git-hours: --repo is not a git repository: ${opts.repo}`
+        : 'git-hours: not a git repository (run from inside a repo).');
     }
     else if (/does not have any commits yet/i.test(message)) {
       console.error('git-hours: this repository has no commits yet.');
@@ -100,7 +119,8 @@ export function getCommits(opts: Options): CommitEntry[] {
   if (!raw)
     return [];
 
-  return applyExcludeAuthors(parseLogOutput(raw), opts.excludeAuthor);
+  const inRange = filterByAuthorDate(parseLogOutput(raw), sinceMs, untilMs);
+  return applyExcludeAuthors(inRange, opts.excludeAuthor);
 }
 
 function showProgressHint(): () => void {

@@ -31,8 +31,8 @@ git-hours [options]
 
 | Option | Description |
 | --- | --- |
-| `--since <date>` | Start date (ISO, e.g. `2025-03-01`) |
-| `--until <date>` | End date (ISO, e.g. `2025-04-01`) |
+| `--since <date>` | Start date, inclusive (ISO, e.g. `2025-03-01`; a bare date means local midnight) |
+| `--until <date>` | End date, exclusive (ISO, e.g. `2025-04-01`) |
 | `--month <YYYY-MM>` | Shortcut: analyze a specific month |
 | `--week <YYYY-MM-DD>` | Shortcut: analyze the week starting on that date |
 | `--today` / `--yesterday` | Shortcut: analyze today or yesterday |
@@ -41,7 +41,7 @@ git-hours [options]
 | `--gap <minutes>` | Max gap between commits in a session (default: `120`) |
 | `--first-commit-credit <minutes>` | Time credited for the first commit in a session (default: `30`) |
 | `--auto-gap` | Auto-pick gap from commit cadence (P90 of inter-commit deltas ≤ 6h, clamped to 60–240) |
-| `--author <name>` | Filter by author name (substring match) |
+| `--author <name>` | Filter by author name or email (case-insensitive substring match) |
 | `--all-authors` | Show per-author breakdown |
 | `--exclude-author <name...>` | Exclude commits by author (repeatable, substring match) |
 | `--top <n>` | Limit `--all-authors` to the top N authors by hours |
@@ -68,6 +68,16 @@ git-hours --all-authors
 
 ### Notes
 
+Date ranges apply to the commit's **author date** (when the work was done),
+not its committer date, so commits rebased or cherry-picked later stay in the
+period they were written. `--month`, `--week`, the shortcuts and `--since`/`--until`
+are mutually exclusive.
+
+With `--all-authors`, each author is estimated separately and the total is the
+sum of their hours (person-hours); `--top` only limits which authors are listed.
+The `--daily` breakdown always sums to the total: a session crossing midnight is
+split between the two days.
+
 `--all-branches` passes `--all` to git, which walks **every ref** — including
 remote-tracking branches under `refs/remotes/*`. If you have local-only work,
 this is fine. If you fetch from a shared remote, single-author totals can be
@@ -79,9 +89,11 @@ to scope to your own work.
 
 ```sh
 npm test
+npm run lint
+npm run typecheck
 ```
 
-Runs Node's built-in test runner via `tsx` (used as a dev-time TS loader; not a runtime dependency). Tests cover the pure functions in `src/format.ts` and `src/estimate.ts`.
+Runs Node's built-in test runner via `tsx` (used as a dev-time TS loader; not a runtime dependency). Tests cover the pure functions (session math, formatting, git log parsing, JSON/CSV output, `--compare` windows).
 
 ## How the estimate works
 For each ordered sequence of commits:
@@ -99,7 +111,7 @@ src/
   index.ts        # main() entry
   cli.ts          # commander setup, argument parsing & validation
   git.ts          # git log invocation
-  estimate.ts     # session math (estimateHours, computeDailyBreakdown, pickAutoGap)
+  estimate.ts     # session math (estimateHours, estimateTotal, computeDailyBreakdown, pickAutoGap)
   format.ts       # date / hour / ISO-week formatting
   heatmap.ts      # day-of-week × hour-of-day grid
   output.ts       # JSON / CSV emitters
