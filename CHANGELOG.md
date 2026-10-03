@@ -4,6 +4,19 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [2.1.0] - 2026-10-03
+
+### Added
+
+- `--scan [dirs...]`: find git repositories recursively and report hours per
+  project with a combined total. Repositories are fetched first (`--no-fetch`
+  to skip) and read in parallel. By default all projects share one timeline so
+  sessions hopping between projects are counted once and projects sum to the
+  total; `--independent-repos` estimates each project on its own instead.
+  `--scan-exclude` skips folders by glob, and `--top` limits the listed projects.
+- With `--scan`, `--json` gains `scan` and `perRepo`, and `--csv` emits one row
+  per project (or per project per day with `--daily`).
+
 ## [2.0.0] - 2026-10-03
 
 ### Breaking changes

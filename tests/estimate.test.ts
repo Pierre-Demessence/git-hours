@@ -1,7 +1,7 @@
 import type { CommitEntry, EstimateParams } from '../src/types.ts';
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { computeDailyBreakdown, estimateHours, estimateTotal, pickAutoGap } from '../src/estimate.ts';
+import { attributeGroups, byAuthor, byRepo, computeDailyBreakdown, dailyByGroup, estimateGroups, estimateHours, estimateTotal, pickAutoGap } from '../src/estimate.ts';
 
 const baseOpts: EstimateParams = {
   firstCommitMinutes: 30,
@@ -10,6 +10,12 @@ const baseOpts: EstimateParams = {
 
 function commit(timestamp: number, author = 'a', message = 'm'): CommitEntry {
   return { author, email: `${author}@example.com`, message, timestamp };
+}
+
+const sumHours = (m: Map<string, { hours: number }>) => [...m.values()].reduce((s, r) => s + r.hours, 0);
+
+function inRepo(repo: string, timestamp: number): CommitEntry {
+  return { author: 'me', email: 'me@x', message: 'm', repo, timestamp };
 }
 
 describe('estimateHours', () => {
@@ -69,8 +75,6 @@ describe('computeDailyBreakdown', () => {
     assert.equal(daily.get('2025-03-06')?.commits, 1);
   });
 
-  const sumHours = (m: Map<string, { hours: number }>) => [...m.values()].reduce((s, r) => s + r.hours, 0);
-
   // Regression: days used to be estimated independently, so a session crossing
   // midnight got the first-commit credit twice and lost the elapsed time.
   it('splits a session crossing midnight and sums to the total', () => {
@@ -87,7 +91,7 @@ describe('computeDailyBreakdown', () => {
     const t = new Date(2025, 2, 5, 9).getTime();
     const min = 60_000;
     const commits = [commit(t, 'a'), commit(t + 10 * min, 'b'), commit(t + 50 * min, 'a'), commit(t + 70 * min, 'b')];
-    assert.ok(Math.abs(sumHours(computeDailyBreakdown(commits, baseOpts, true)) - estimateTotal(commits, baseOpts, true).hours) < 1e-9);
+    assert.ok(Math.abs(sumHours(computeDailyBreakdown(commits, baseOpts, byAuthor)) - estimateTotal(commits, baseOpts, byAuthor).hours) < 1e-9);
   });
 });
 
@@ -98,7 +102,7 @@ describe('estimateTotal', () => {
     // Interleaved: merged as one stream it would be 30 + 60 = 90min; per author
     // it is (30 + 60) + (30 + 60) = 180min of person-time.
     const commits = [commit(t, 'a'), commit(t + 10 * min, 'b'), commit(t + 60 * min, 'a'), commit(t + 70 * min, 'b')];
-    const r = estimateTotal(commits, baseOpts, true);
+    const r = estimateTotal(commits, baseOpts, byAuthor);
     assert.equal(r.hours, 3);
     assert.equal(r.commits, 4);
     assert.equal(r.sessions, 2);
@@ -147,5 +151,36 @@ describe('pickAutoGap', () => {
     const gap = pickAutoGap(ts.map(x => commit(x)));
     assert.equal(gap % 5, 0);
     assert.ok(gap >= 60 && gap <= 240);
+  });
+});
+
+describe('repo attribution', () => {
+  const MIN = 60_000;
+  const T = new Date(2025, 2, 5, 9).getTime();
+  // One session hopping between repos: A 09:00, B 09:30, A 10:00.
+  const commits = [inRepo('A', T), inRepo('B', T + 30 * MIN), inRepo('A', T + 60 * MIN)];
+
+  it('shared: credits each span to the repo of the commit ending it, summing to the total', () => {
+    const groups = attributeGroups(commits, baseOpts, byRepo);
+    const hours = Object.fromEntries(groups.map(g => [g.key, g.result.hours]));
+    assert.deepEqual(hours, { A: 1, B: 0.5 }); // A: 30 credit + 30; B: 30
+    assert.equal(groups.find(g => g.key === 'A')?.result.sessions, 1);
+    assert.equal(groups.find(g => g.key === 'B')?.result.sessions, 0);
+    assert.equal(groups.reduce((s, g) => s + g.result.hours, 0), estimateHours(commits, baseOpts).hours);
+  });
+
+  it('independent: estimates each repo on its own (overlap counted per repo)', () => {
+    const hours = Object.fromEntries(estimateGroups(commits, baseOpts, byRepo).map(g => [g.key, g.result.hours]));
+    assert.deepEqual(hours, { A: 1.5, B: 0.5 });
+    assert.equal(estimateTotal(commits, baseOpts, byRepo).hours, 2);
+  });
+
+  it('per-repo daily breakdowns sum to each repo total, in both modes', () => {
+    for (const shared of [true, false]) {
+      const daily = dailyByGroup(commits, baseOpts, byRepo, shared);
+      const groups = shared ? attributeGroups(commits, baseOpts, byRepo) : estimateGroups(commits, baseOpts, byRepo);
+      for (const g of groups)
+        assert.equal(sumHours(daily.get(g.key)!), g.result.hours);
+    }
   });
 });

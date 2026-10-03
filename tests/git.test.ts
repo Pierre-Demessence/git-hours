@@ -15,31 +15,32 @@ describe('parseLogOutput', () => {
   });
 
   it('parses a single commit line', () => {
-    const raw = `1700000000${FS}Alice${FS}alice@example.com${FS}fix: bug`;
+    const raw = `1700000000${FS}abc123${FS}Alice${FS}alice@example.com${FS}fix: bug`;
     const [c] = parseLogOutput(raw);
     assert.equal(c.author, 'Alice');
     assert.equal(c.email, 'alice@example.com');
     assert.equal(c.message, 'fix: bug');
     assert.equal(c.timestamp, 1700000000_000);
+    assert.equal(c.hash, 'abc123');
   });
 
   it('keeps `|` characters in author and message intact', () => {
-    const raw = `1700000000${FS}Bob | The Builder${FS}bob@example.com${FS}fix(a|b): pipe in scope`;
+    const raw = `1700000000${FS}abc123${FS}Bob | The Builder${FS}bob@example.com${FS}fix(a|b): pipe in scope`;
     const [c] = parseLogOutput(raw);
     assert.equal(c.author, 'Bob | The Builder');
     assert.equal(c.message, 'fix(a|b): pipe in scope');
   });
 
   it('rejoins extra separators in message', () => {
-    const raw = `1700000000${FS}Alice${FS}alice@example.com${FS}msg${FS}with${FS}seps`;
+    const raw = `1700000000${FS}abc123${FS}Alice${FS}alice@example.com${FS}msg${FS}with${FS}seps`;
     const [c] = parseLogOutput(raw);
     assert.equal(c.message, `msg${FS}with${FS}seps`);
   });
 
   it('parses multiple lines', () => {
     const raw = [
-      `1700000000${FS}Alice${FS}alice@example.com${FS}a`,
-      `1700000060${FS}Bob${FS}bob@example.com${FS}b`,
+      `1700000000${FS}abc123${FS}Alice${FS}alice@example.com${FS}a`,
+      `1700000060${FS}abc123${FS}Bob${FS}bob@example.com${FS}b`,
     ].join('\n');
     const out = parseLogOutput(raw);
     assert.equal(out.length, 2);

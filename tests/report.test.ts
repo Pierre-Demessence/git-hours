@@ -13,6 +13,7 @@ const opts: ReportOptions = {
   firstCommitMinutes: 30,
   gapMinutes: 120,
   heatmap: false,
+  repoMode: 'shared',
 };
 const ALL: DateWindow = { label: 'all time', since: null, until: null };
 const MIN = 60_000;
@@ -124,5 +125,69 @@ describe('renderCsv', () => {
   it('emits one data row per day', () => {
     const r = buildReport({ commits: [commit(T)], window: ALL }, { ...opts, daily: true });
     assert.equal(renderCsv(r), 'date,day,week,hours,commits,sessions\n2025-03-05,Wed,W10,0.5000,1,1\n');
+  });
+});
+
+describe('scan reports', () => {
+  const scanCommit = (repo: string, timestamp: number): CommitEntry => ({ author: 'me', email: 'me@x', message: 'm', repo, timestamp });
+  // A 09:00, B 09:30, A 10:00, and C alone the next day.
+  const commits = [scanCommit('A', T), scanCommit('B', T + 30 * MIN), scanCommit('A', T + 60 * MIN), scanCommit('C', T + 24 * 60 * MIN)];
+  const scan = { repos: [{ name: 'A', path: '/r/A' }, { name: 'B', path: '/r/B' }, { name: 'C', path: '/r/C' }, { name: 'D', path: '/r/D' }], roots: ['/r'] };
+
+  it('shared mode: projects sum to the total and are ranked', () => {
+    const r = buildReport({ commits, scan, window: ALL }, opts);
+    assert.deepEqual(r.repos?.shown.map(x => [x.name, x.path, x.result.hours]), [['A', '/r/A', 1], ['B', '/r/B', 0.5], ['C', '/r/C', 0.5]]);
+    assert.equal(r.repos?.scanned, 4);
+    assert.equal(r.repos?.active, 3);
+    assert.equal(r.total.hours, 2);
+  });
+
+  it('independent mode: the total is the sum of independent estimates', () => {
+    const r = buildReport({ commits, scan, window: ALL }, { ...opts, repoMode: 'independent' });
+    assert.equal(r.repos?.shown[0].result.hours, 1.5);
+    assert.equal(r.total.hours, 2.5);
+  });
+
+  it('--top limits the listed projects but not the total', () => {
+    const r = buildReport({ commits, scan, window: ALL }, { ...opts, top: 1 });
+    assert.equal(r.repos?.shown.length, 1);
+    assert.equal(r.total.hours, 2);
+    assert.match(renderText(r), /showing top 1 of 3 projects/);
+  });
+
+  it('renders a project table with a total row', () => {
+    const out = renderText(buildReport({ commits, scan, window: ALL }, opts));
+    assert.match(out, /Scanned 4 repos in \/r · 3 with activity/);
+    assert.match(out, /^ {2}A +01h 00m +2 +1 +2025-03-05 +2025-03-05$/m);
+    assert.match(out, /^ {2}Total +02h 00m +4 +2 +2025-03-05 +2025-03-06$/m);
+    assert.doesNotMatch(out, /Total time/);
+  });
+
+  it('emits perRepo and scan metadata in JSON', () => {
+    const p = buildJson(buildReport({ commits, scan, window: ALL }, { ...opts, daily: true })) as {
+      perRepo: Array<{ daily: unknown[]; hours: number; name: string; path: string }>;
+      scan: unknown;
+    };
+    assert.deepEqual(p.scan, { activeRepos: 3, mode: 'shared', roots: ['/r'], scannedRepos: 4 });
+    assert.deepEqual(p.perRepo.map(x => [x.name, x.path, x.hours, x.daily.length]), [['A', '/r/A', 1, 1], ['B', '/r/B', 0.5, 1], ['C', '/r/C', 0.5, 1]]);
+  });
+
+  it('renders CSV per project, or per project per day with --daily', () => {
+    const plain = renderCsv(buildReport({ commits, scan, window: ALL }, opts)).trim().split('\n');
+    assert.equal(plain[0], 'project,path,hours,commits,sessions,firstCommit,lastCommit');
+    assert.match(plain[1], /^A,\/r\/A,1\.0000,2,1,/);
+
+    const daily = renderCsv(buildReport({ commits, scan, window: ALL }, { ...opts, daily: true })).trim().split('\n');
+    assert.deepEqual(daily, [
+      'date,day,week,project,hours,commits,sessions',
+      '2025-03-05,Wed,W10,A,1.0000,2,1',
+      '2025-03-05,Wed,W10,B,0.5000,1,0',
+      '2025-03-06,Thu,W10,C,0.5000,1,1',
+    ]);
+  });
+
+  it('quotes CSV fields containing commas', () => {
+    const r = buildReport({ commits: [scanCommit('a,b', T)], scan: { repos: [{ name: 'a,b', path: '/x' }], roots: ['/'] }, window: ALL }, opts);
+    assert.match(renderCsv(r), /^"a,b",/m);
   });
 });

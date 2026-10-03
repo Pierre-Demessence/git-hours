@@ -1,4 +1,4 @@
-import type { Report } from '../report.ts';
+import type { DailyRow, Report } from '../report.ts';
 import type { DateWindow, SessionResult } from '../types.ts';
 import { toLocalGitDate } from '../dates.ts';
 
@@ -19,6 +19,17 @@ function jsonRange(w: DateWindow) {
   return { label: w.label, since: bound(w.since), until: bound(w.until) };
 }
 
+function jsonDailyRow({ date, day, result, week }: DailyRow) {
+  return {
+    commits: result.commits,
+    date,
+    day,
+    hours: round(result.hours),
+    sessions: result.sessions,
+    week,
+  };
+}
+
 export function buildJson(report: Report): Record<string, unknown> {
   const payload: Record<string, unknown> = {
     range: jsonRange(report.window),
@@ -31,16 +42,19 @@ export function buildJson(report: Report): Record<string, unknown> {
     payload.totalAuthors = report.authors.count;
   }
 
-  if (report.daily) {
-    payload.daily = report.daily.map(({ date, day, result, week }) => ({
-      commits: result.commits,
-      date,
-      day,
-      hours: round(result.hours),
-      sessions: result.sessions,
-      week,
+  if (report.repos) {
+    const { active, mode, roots, scanned, shown } = report.repos;
+    payload.scan = { activeRepos: active, mode, roots, scannedRepos: scanned };
+    payload.perRepo = shown.map(({ daily, name, path, result }) => ({
+      name,
+      path,
+      ...jsonResult(result),
+      ...(daily ? { daily: daily.map(jsonDailyRow) } : {}),
     }));
   }
+
+  if (report.daily)
+    payload.daily = report.daily.map(jsonDailyRow);
 
   if (report.heatmap)
     payload.byHourDayOfWeek = report.heatmap;

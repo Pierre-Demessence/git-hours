@@ -1,6 +1,6 @@
 import type { DailyRow, Report } from '../report.ts';
 import type { SessionResult } from '../types.ts';
-import { formatDateTime, formatHours, formatSignedHours, formatTimeOfDay } from '../format.ts';
+import { dateKey, formatDateTime, formatHours, formatSignedHours, formatTimeOfDay } from '../format.ts';
 
 function resultLines(label: string, result: SessionResult): string[] {
   if (result.commits === 0)
@@ -35,6 +35,34 @@ function compareLines(report: Report): string[] {
     `    Delta:  ${formatSignedHours(compare.delta.hours)}  (${dc > 0 ? '+' : ''}${dc} commits, ${pctLabel(compare.delta.hoursPct, total.hours)} hours)`,
     '',
   ];
+}
+
+function repoLines(repos: NonNullable<Report['repos']>, total: SessionResult): string[] {
+  const { active, mode, roots, scanned, shown } = repos;
+  const lines = [`  Scanned ${scanned} ${scanned === 1 ? 'repo' : 'repos'} in ${roots.join(', ')} · ${active} with activity`];
+  if (mode === 'independent')
+    lines.push('  Repos estimated independently: work overlapping in time counts once per repo.');
+  lines.push('');
+  if (active === 0)
+    return [...lines, '  No commits found', ''];
+
+  const day = (d: Date | null) => (d ? dateKey(d.getTime()) : '—');
+  const nameWidth = Math.max('Project'.length, 'Total'.length, ...shown.map(r => r.name.length));
+  const SEP = '  ';
+  const row = (name: string, r: SessionResult) =>
+    `  ${name.padEnd(nameWidth)}${SEP}${formatHours(r.hours).padStart(8)}${SEP}${String(r.commits).padStart(7)}${SEP}${String(r.sessions).padStart(8)}${SEP}${day(r.firstCommit).padEnd(10)}${SEP}${day(r.lastCommit)}`;
+
+  lines.push(
+    `  ${'Project'.padEnd(nameWidth)}${SEP}${'Time'.padStart(8)}${SEP}${'Commits'.padStart(7)}${SEP}${'Sessions'.padStart(8)}${SEP}${'First'.padEnd(10)}${SEP}Last`,
+    `  ${'─'.repeat(nameWidth)}${SEP}${'─'.repeat(8)}${SEP}${'─'.repeat(7)}${SEP}${'─'.repeat(8)}${SEP}${'─'.repeat(10)}${SEP}${'─'.repeat(10)}`,
+    ...shown.map(r => row(r.name, r.result)),
+    `  ${'─'.repeat(nameWidth)}${SEP}${'─'.repeat(8)}${SEP}${'─'.repeat(7)}${SEP}${'─'.repeat(8)}${SEP}${'─'.repeat(10)}${SEP}${'─'.repeat(10)}`,
+    row('Total', total),
+  );
+  if (shown.length < active)
+    lines.push(`  (showing top ${shown.length} of ${active} projects; the total covers all of them)`);
+  lines.push('');
+  return lines;
 }
 
 const BAR_WIDTH = 28;
@@ -120,7 +148,10 @@ export function renderText(report: Report): string {
     '',
   ];
 
-  if (report.authors) {
+  if (report.repos) {
+    lines.push(...repoLines(report.repos, report.total));
+  }
+  else if (report.authors) {
     const { count, shown } = report.authors;
     for (const { author, result } of shown)
       lines.push(...resultLines(author, result), '');
