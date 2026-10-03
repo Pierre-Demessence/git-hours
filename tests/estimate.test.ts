@@ -1,18 +1,11 @@
-import type { CommitEntry, Options } from '../src/types.ts';
+import type { CommitEntry, EstimateParams } from '../src/types.ts';
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { computeDailyBreakdown, estimateHours, estimateTotal, pickAutoGap } from '../src/estimate.ts';
 
-const baseOpts: Options = {
-  allAuthors: false,
-  allBranches: false,
-  autoGap: false,
-  daily: false,
-  excludeAuthor: [],
+const baseOpts: EstimateParams = {
   firstCommitMinutes: 30,
-  format: 'text',
   gapMinutes: 120,
-  heatmap: false,
 };
 
 function commit(timestamp: number, author = 'a', message = 'm'): CommitEntry {
@@ -49,7 +42,7 @@ describe('estimateHours', () => {
   });
 
   it('respects custom gap and first-commit values', () => {
-    const opts: Options = { ...baseOpts, gapMinutes: 30, firstCommitMinutes: 10 };
+    const opts: EstimateParams = { gapMinutes: 30, firstCommitMinutes: 10 };
     // Two commits 45min apart with 30min gap → two sessions, 10+10 = 20min
     const r = estimateHours([commit(0), commit(45 * 60 * 1000)], opts);
     assert.equal(r.sessions, 2);
@@ -94,8 +87,7 @@ describe('computeDailyBreakdown', () => {
     const t = new Date(2025, 2, 5, 9).getTime();
     const min = 60_000;
     const commits = [commit(t, 'a'), commit(t + 10 * min, 'b'), commit(t + 50 * min, 'a'), commit(t + 70 * min, 'b')];
-    const opts = { ...baseOpts, allAuthors: true };
-    assert.ok(Math.abs(sumHours(computeDailyBreakdown(commits, opts)) - estimateTotal(commits, opts).hours) < 1e-9);
+    assert.ok(Math.abs(sumHours(computeDailyBreakdown(commits, baseOpts, true)) - estimateTotal(commits, baseOpts, true).hours) < 1e-9);
   });
 });
 
@@ -106,7 +98,7 @@ describe('estimateTotal', () => {
     // Interleaved: merged as one stream it would be 30 + 60 = 90min; per author
     // it is (30 + 60) + (30 + 60) = 180min of person-time.
     const commits = [commit(t, 'a'), commit(t + 10 * min, 'b'), commit(t + 60 * min, 'a'), commit(t + 70 * min, 'b')];
-    const r = estimateTotal(commits, { ...baseOpts, allAuthors: true });
+    const r = estimateTotal(commits, baseOpts, true);
     assert.equal(r.hours, 3);
     assert.equal(r.commits, 4);
     assert.equal(r.sessions, 2);

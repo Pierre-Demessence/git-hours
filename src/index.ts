@@ -1,117 +1,45 @@
-import type { Options, SessionResult } from './types.ts';
+import type { WindowCommits } from './report.ts';
+import type { Options } from './types.ts';
 import process from 'node:process';
 import { parseArgs } from './cli.ts';
-import { computeDailyBreakdown, estimateHours, estimatePerAuthor, pickAutoGap, sumResults } from './estimate.ts';
-import { formatHours } from './format.ts';
-import { getCommits } from './git.ts';
-import { printHeatmap } from './heatmap.ts';
-import { printCsv, printJson } from './output.ts';
-import { printDailyBreakdown, printResult } from './print.ts';
+import { CliError } from './errors.ts';
+import { readCommits } from './git.ts';
+import { startProgress } from './progress.ts';
+import { renderCsv } from './render/csv.ts';
+import { renderJson } from './render/json.ts';
+import { renderText } from './render/text.ts';
+import { buildReport } from './report.ts';
 
-function describeRange(opts: Pick<Options, 'since' | 'until'>): string {
-  return opts.since || opts.until ? `${opts.since ?? 'beginning'} → ${opts.until ?? 'now'}` : 'all time';
+const RENDERERS = { csv: renderCsv, json: renderJson, text: renderText } as const;
+
+async function run(opts: Options): Promise<string> {
+  const progress = startProgress('Reading git log...');
+  try {
+    const read = async (window: Options['window']): Promise<WindowCommits> =>
+      ({ commits: await readCommits(opts.repo, opts.filter, window), window });
+    const [current, compare] = await Promise.all([
+      read(opts.window),
+      opts.compare ? read(opts.compare) : undefined,
+    ]);
+    const report = buildReport({ ...current, compare }, opts.report);
+    return RENDERERS[opts.format](report);
+  }
+  finally {
+    progress.stop();
+  }
 }
 
-function pctDelta(current: number, base: number): string {
-  if (base === 0)
-    return current === 0 ? '0%' : '+∞%';
-  const pct = ((current - base) / base) * 100;
-  const sign = pct > 0 ? '+' : '';
-  return `${sign}${pct.toFixed(1)}%`;
+async function main(): Promise<void> {
+  try {
+    process.stdout.write(await run(parseArgs(process.argv.slice(2))));
+  }
+  catch (err) {
+    if (!(err instanceof CliError))
+      throw err;
+    if (err.message)
+      console.error(`git-hours: ${err.message}`);
+    process.exitCode = err.exitCode;
+  }
 }
 
-function printCompareSummary(currentLabel: string, current: SessionResult, compareLabel: string, compare: SessionResult): void {
-  const dh = current.hours - compare.hours;
-  const dc = current.commits - compare.commits;
-  const sign = (n: number) => (n > 0 ? '+' : '');
-  console.log('  Comparison');
-  console.log(`    Current (${currentLabel}):  ${formatHours(current.hours)}  (${current.commits} commits)`);
-  console.log(`    Compare (${compareLabel}):  ${formatHours(compare.hours)}  (${compare.commits} commits)`);
-  console.log(`    Delta:               ${sign(dh)}${formatHours(Math.abs(dh))}  (${sign(dc)}${dc} commits, ${pctDelta(current.hours, compare.hours)} hours)`);
-  console.log();
-}
-
-function main(): void {
-  const opts = parseArgs(process.argv.slice(2));
-  const commits = getCommits(opts);
-
-  if (opts.autoGap)
-    opts.gapMinutes = pickAutoGap(commits);
-
-  if (opts.format === 'csv' && opts.compare) {
-    console.error('git-hours: --csv is not supported with --compare');
-    process.exit(2);
-  }
-
-  if (opts.format === 'json') {
-    if (opts.compare) {
-      const compareCommits = getCommits({ ...opts, since: opts.compare.since, until: opts.compare.until });
-      const current = estimateHours(commits, opts);
-      const compare = estimateHours(compareCommits, { ...opts, since: opts.compare.since, until: opts.compare.until });
-      const dh = current.hours - compare.hours;
-      const dc = current.commits - compare.commits;
-      const payload = {
-        current: { label: describeRange(opts), since: opts.since ?? null, until: opts.until ?? null, hours: current.hours, commits: current.commits, sessions: current.sessions },
-        compare: { label: opts.compare.label, since: opts.compare.since, until: opts.compare.until, hours: compare.hours, commits: compare.commits, sessions: compare.sessions },
-        delta: { hours: dh, commits: dc, hoursPct: compare.hours === 0 ? null : ((current.hours - compare.hours) / compare.hours) * 100 },
-      };
-      console.log(JSON.stringify(payload, null, 2));
-      return;
-    }
-    printJson(commits, opts);
-    return;
-  }
-  if (opts.format === 'csv') {
-    printCsv(commits, opts);
-    return;
-  }
-
-  const dateRange = describeRange(opts);
-
-  const gapLabel = opts.autoGap ? `${opts.gapMinutes}min (auto)` : `${opts.gapMinutes}min`;
-  console.log(`\n⏱  Git Hours — ${dateRange}`);
-  console.log(`   Gap threshold: ${gapLabel} | First-commit credit: ${opts.firstCommitMinutes}min\n`);
-
-  if (opts.allAuthors) {
-    const ranked = estimatePerAuthor(commits, opts);
-    const totalAuthors = ranked.length;
-    const shown = opts.top ? ranked.slice(0, opts.top) : ranked;
-    for (const { author, result } of shown) {
-      printResult(author, result);
-      console.log();
-    }
-    // The grand total always covers every author, matching the JSON `total`;
-    // --top only limits which authors are listed.
-    const grandTotal = sumResults(ranked.map(a => a.result)).hours;
-    if (opts.top && opts.top < totalAuthors) {
-      console.log(`  (showing top ${shown.length} of ${totalAuthors} authors)`);
-      console.log(`  Grand total (all ${totalAuthors} authors): ${formatHours(grandTotal)}\n`);
-    }
-    else {
-      console.log(`  Grand total: ${formatHours(grandTotal)}\n`);
-    }
-  }
-  else {
-    const result = estimateHours(commits, opts);
-    printResult('Total', result);
-    console.log();
-
-    if (opts.compare) {
-      const compareCommits = getCommits({ ...opts, since: opts.compare.since, until: opts.compare.until });
-      const compareResult = estimateHours(compareCommits, { ...opts, since: opts.compare.since, until: opts.compare.until });
-      printResult(`Compare (${opts.compare.label})`, compareResult);
-      console.log();
-      printCompareSummary(dateRange, result, opts.compare.label, compareResult);
-    }
-  }
-
-  if (commits.length > 0 && opts.daily) {
-    const daily = computeDailyBreakdown(commits, opts);
-    printDailyBreakdown(daily);
-  }
-
-  if (commits.length > 0 && opts.heatmap)
-    printHeatmap(commits);
-}
-
-main();
+void main();

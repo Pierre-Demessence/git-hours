@@ -1,7 +1,11 @@
 import assert from 'node:assert/strict';
-import { Buffer } from 'node:buffer';
-import { describe, it } from 'node:test';
-import { applyExcludeAuthors, extractGitErrorMessage, filterByAuthorDate, parseLogOutput } from '../src/git.ts';
+import { execFileSync } from 'node:child_process';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { after, before, describe, it } from 'node:test';
+import { GitError } from '../src/errors.ts';
+import { applyExcludeAuthors, buildLogArgs, describeGitFailure, filterByAuthorDate, parseLogOutput, readCommits } from '../src/git.ts';
 
 const FS = '\x1F';
 
@@ -73,36 +77,87 @@ describe('applyExcludeAuthors', () => {
   });
 });
 
-describe('extractGitErrorMessage', () => {
-  it('reads string stderr', () => {
-    const err = Object.assign(new Error('exec failed'), { stderr: 'fatal: not a git repository\n' });
-    assert.equal(extractGitErrorMessage(err), 'fatal: not a git repository\n');
-  });
-
-  it('decodes Buffer stderr', () => {
-    const err = Object.assign(new Error('exec failed'), { stderr: Buffer.from('boom', 'utf-8') });
-    assert.equal(extractGitErrorMessage(err), 'boom');
-  });
-
-  it('falls back to err.message when stderr is missing', () => {
-    assert.equal(extractGitErrorMessage(new Error('plain message')), 'plain message');
-  });
-
-  it('handles non-Error throws', () => {
-    assert.equal(extractGitErrorMessage('weird'), 'weird');
-    assert.equal(extractGitErrorMessage(null), 'null');
-  });
-});
-
 describe('filterByAuthorDate', () => {
   const at = (timestamp: number) => ({ author: 'a', email: 'a@x', message: '', timestamp });
   const commits = [at(100), at(200), at(300)];
 
   it('keeps everything without bounds', () => {
-    assert.equal(filterByAuthorDate(commits, null, null).length, 3);
+    assert.equal(filterByAuthorDate(commits, { since: null, until: null }).length, 3);
   });
 
   it('uses an inclusive start and exclusive end', () => {
-    assert.deepEqual(filterByAuthorDate(commits, 200, 300).map(c => c.timestamp), [200]);
+    assert.deepEqual(filterByAuthorDate(commits, { since: 200, until: 300 }).map(c => c.timestamp), [200]);
+  });
+});
+
+describe('buildLogArgs', () => {
+  const filter = { allBranches: false, excludeAuthor: [] };
+
+  it('passes only a lower bound to git', () => {
+    const args = buildLogArgs(filter, { since: new Date(2025, 2, 1).getTime(), until: new Date(2025, 3, 1).getTime() });
+    assert.ok(args.includes('--since=2025-03-01 00:00:00'));
+    assert.ok(!args.some(a => a.startsWith('--until')));
+  });
+
+  it('matches --author as a case-insensitive fixed string', () => {
+    const args = buildLogArgs({ ...filter, author: 'a.b' }, { since: null, until: null });
+    assert.deepEqual(args.slice(-3), ['--fixed-strings', '--regexp-ignore-case', '--author=a.b']);
+  });
+
+  it('prefers --all over a branch', () => {
+    const args = buildLogArgs({ ...filter, allBranches: true, branch: 'dev' }, { since: null, until: null });
+    assert.ok(args.includes('--all'));
+    assert.ok(!args.includes('dev'));
+  });
+});
+
+describe('describeGitFailure', () => {
+  it('recognises common failures', () => {
+    assert.match(describeGitFailure('fatal: not a git repository (or any parent)'), /run from inside a repo/);
+    assert.match(describeGitFailure('fatal: not a git repository', 'x'), /not a git repository: x/);
+    assert.match(describeGitFailure(`fatal: your current branch 'main' does not have any commits yet`), /no commits yet/);
+    assert.match(describeGitFailure('fatal: boom\n'), /failed to read git log: fatal: boom$/);
+  });
+});
+
+describe('readCommits (real git)', () => {
+  let dir: string;
+  const commitAt = (name: string, authorDate: string, committerDate = authorDate) =>
+    execFileSync('git', ['-c', `user.name=${name}`, '-c', `user.email=${name}@x`, 'commit', '-q', '--allow-empty', '-m', authorDate], {
+      cwd: dir,
+      env: { ...process.env, GIT_AUTHOR_DATE: authorDate, GIT_COMMITTER_DATE: committerDate },
+    });
+
+  before(() => {
+    dir = mkdtempSync(join(tmpdir(), 'git-hours-'));
+    execFileSync('git', ['init', '-q'], { cwd: dir });
+    commitAt('alice', '2025-02-27T10:00:00', '2025-03-02T10:00:00'); // rebased later
+    commitAt('alice', '2025-03-01T00:30:00', '2025-03-02T11:00:00');
+    commitAt('bob', '2025-03-03T09:00:00');
+  });
+
+  after(() => rmSync(dir, { force: true, recursive: true }));
+
+  const march = { since: new Date(2025, 2, 1).getTime(), until: new Date(2025, 3, 1).getTime() };
+  const filter = { allBranches: false, excludeAuthor: [] };
+
+  it('filters on author date, not committer date', async () => {
+    const commits = await readCommits(dir, filter, march);
+    assert.deepEqual(commits.map(c => c.message).sort(), ['2025-03-01T00:30:00', '2025-03-03T09:00:00']);
+  });
+
+  it('applies author filters', async () => {
+    assert.equal((await readCommits(dir, { ...filter, author: 'BOB' }, march)).length, 1);
+    assert.equal((await readCommits(dir, { ...filter, excludeAuthor: ['bob'] }, march)).length, 1);
+  });
+
+  it('rejects with a GitError outside a repository', async () => {
+    const outside = mkdtempSync(join(tmpdir(), 'git-hours-norepo-'));
+    try {
+      await assert.rejects(readCommits(outside, filter, march), (err: unknown) => err instanceof GitError && /not a git repository/.test(err.message));
+    }
+    finally {
+      rmSync(outside, { force: true, recursive: true });
+    }
   });
 });
