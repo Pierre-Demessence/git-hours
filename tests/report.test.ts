@@ -216,9 +216,9 @@ describe('gap calibration in reports', () => {
 
   it('falls back to the default without enough history', () => {
     const r = buildReport({ commits: [commit(T), commit(T + 10 * MIN)], window: ALL }, auto);
-    assert.equal(r.params.gapMinutes, 120);
+    assert.equal(r.params.gapMinutes, 90);
     assert.equal(r.params.gap.source, 'default');
-    assert.match(renderText(r), /120min \(default: not enough history to calibrate\)/);
+    assert.match(renderText(r), /90min \(default: not enough history to calibrate\)/);
   });
 
   it('learns the gap from the calibration commits, not just the window', () => {

@@ -19,10 +19,10 @@ All notable changes to this project are documented here. The format follows
   commits of the 12 months before the end of the report window (further back
   if needed), with a new method (see README, "The session gap"). `--auto-gap`
   and the `autoGap` config key are removed; `--gap` / `"gap"` fix the value.
-  Without enough history (500 same-day pauses) the gap is 120 minutes as
-  before. `--per-author` and `--independent-repos` calibrate per author / per
-  repository. JSON `params.autoGap` is replaced by `params.gap` (source, sample
-  size, period).
+  Without enough history (500 same-day pauses) the gap is 90 minutes
+  (previously a fixed 120 default). `--per-author` and `--independent-repos`
+  calibrate per author / per repository. JSON `params.autoGap` is replaced by
+  `params.gap` (source, sample size, period).
 
 ### Added
 

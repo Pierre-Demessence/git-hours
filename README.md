@@ -101,7 +101,9 @@ git-hours --scan ~/dev ~/work --last-month --all-branches
 
 ```
 ⏱  Git Hours — last-month (2026-09-01..2026-10-01)
-   Gap threshold: 120min | First-commit credit: 30min
+   Gap threshold: 75min (auto: learned from 5184 gaps, 2025-10-01..2026-09-30)
+   First-commit credit: 30min
+   Author: me@example.com, My Name (from git config)
 
   Scanned 37 repos in ~/dev, ~/work · 3 with activity
 
@@ -237,8 +239,10 @@ fixed value for everyone, git-hours **learns yours** from your history:
   otherwise it is set two standard deviations above your typical in-session
   pause, modelled from the lower half of the data. The result is clamped to
   30–240 minutes.
-- **Not enough history** (fewer than 500 pauses in total): 120 minutes, and
-  the header says so.
+- **Not enough history** (fewer than 500 pauses in total): 90 minutes, and
+  the header says so. (Fixed values of 60–90 minutes were much closer to the
+  truth than the traditional 120 in the simulations; 90 stays safe for people
+  who work one session a day, who are the most likely to have little history.)
 - **`--per-author`** learns one gap per author, and `--scan --independent-repos`
   one per repository; with too little history of its own, a group uses the
   overall gap. With the default shared timeline, `--scan` uses one gap for all

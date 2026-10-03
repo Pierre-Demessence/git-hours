@@ -20,7 +20,11 @@
 //
 // Calibration needs MIN_GAPS same-day gaps; with fewer, DEFAULT_GAP is used.
 
-export const DEFAULT_GAP = 120;
+// Used without enough history. Lower than the traditional 120: in the
+// simulations a fixed 60-90 minutes was markedly closer to the truth (120
+// counts most lunch and meeting breaks as work), and 90 stays safe for
+// one-session-a-day histories, which are the ones most likely to be sparse.
+export const DEFAULT_GAP = 90;
 export const MIN_GAPS = 500;
 const MIN_GAP_MINUTES = 0.5;
 const MAX_GAP_MINUTES = 8 * 60;
