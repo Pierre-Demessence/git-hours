@@ -1,4 +1,4 @@
-import type { CommitEntry, Options, SessionResult } from './types.ts';
+import type { CommitEntry, EstimateParams, SessionResult } from './types.ts';
 import { dateKey } from './format.ts';
 
 // Auto-pick a session gap from the commit cadence: P90 of inter-commit deltas
@@ -23,14 +23,14 @@ export function pickAutoGap(commits: CommitEntry[]): number {
   return Math.max(60, Math.min(240, rounded));
 }
 
-export function estimateHours(commits: CommitEntry[], opts: Options): SessionResult {
+export function estimateHours(commits: CommitEntry[], params: EstimateParams): SessionResult {
   if (commits.length === 0) {
     return { commits: 0, firstCommit: null, hours: 0, lastCommit: null, sessions: 0 };
   }
 
   const sorted = [...commits].sort((a, b) => a.timestamp - b.timestamp);
-  const gapMs = opts.gapMinutes * 60 * 1000;
-  const firstCommitMs = opts.firstCommitMinutes * 60 * 1000;
+  const gapMs = params.gapMinutes * 60 * 1000;
+  const firstCommitMs = params.firstCommitMinutes * 60 * 1000;
 
   let totalMs = firstCommitMs;
   let sessions = 1;
@@ -72,9 +72,9 @@ export interface AuthorResult {
 }
 
 // Per-author estimates, ranked by hours descending.
-export function estimatePerAuthor(commits: CommitEntry[], opts: Options): AuthorResult[] {
+export function estimatePerAuthor(commits: CommitEntry[], params: EstimateParams): AuthorResult[] {
   return [...groupByAuthor(commits).entries()]
-    .map(([author, list]) => ({ author, result: estimateHours(list, opts) }))
+    .map(([author, list]) => ({ author, result: estimateHours(list, params) }))
     .sort((a, b) => b.result.hours - a.result.hours);
 }
 
@@ -109,20 +109,20 @@ export function sumResults(results: SessionResult[]): SessionResult {
   return total;
 }
 
-// Total for the whole selection. With --all-authors each author is estimated
+// Total for the whole selection. With `perAuthor` each author is estimated
 // independently and summed (person-hours), so interleaved commits from
 // different people are never mistaken for one continuous session.
-export function estimateTotal(commits: CommitEntry[], opts: Options): SessionResult {
-  if (!opts.allAuthors)
-    return estimateHours(commits, opts);
-  return sumResults(estimatePerAuthor(commits, opts).map(a => a.result));
+export function estimateTotal(commits: CommitEntry[], params: EstimateParams, perAuthor = false): SessionResult {
+  if (!perAuthor)
+    return estimateHours(commits, params);
+  return sumResults(estimatePerAuthor(commits, params).map(a => a.result));
 }
 
 // Per-day breakdown of a single commit stream, using the same session walk as
 // estimateHours so the days always sum to the total. Elapsed time inside a
 // session that crosses local midnight is split at midnight; the first-commit
 // credit and the session count go to the day of the commit that opens it.
-function dailyForStream(commits: CommitEntry[], opts: Options): Map<string, SessionResult> {
+function dailyForStream(commits: CommitEntry[], params: EstimateParams): Map<string, SessionResult> {
   const daily = new Map<string, SessionResult>();
   const bucket = (key: string): SessionResult => {
     let r = daily.get(key);
@@ -146,8 +146,8 @@ function dailyForStream(commits: CommitEntry[], opts: Options): Map<string, Sess
   };
 
   const sorted = [...commits].sort((a, b) => a.timestamp - b.timestamp);
-  const gapMs = opts.gapMinutes * 60 * 1000;
-  const firstCommitHours = opts.firstCommitMinutes / 60;
+  const gapMs = params.gapMinutes * 60 * 1000;
+  const firstCommitHours = params.firstCommitMinutes / 60;
 
   for (let i = 0; i < sorted.length; i++) {
     const ts = sorted[i].timestamp;
@@ -169,12 +169,14 @@ function dailyForStream(commits: CommitEntry[], opts: Options): Map<string, Sess
   return daily;
 }
 
-export function computeDailyBreakdown(commits: CommitEntry[], opts: Options): Map<string, SessionResult> {
-  if (!opts.allAuthors)
-    return dailyForStream(commits, opts);
+// Per-day breakdown; with `perAuthor` it is the sum of each author's own
+// breakdown, so it always adds up to estimateTotal() with the same flag.
+export function computeDailyBreakdown(commits: CommitEntry[], params: EstimateParams, perAuthor = false): Map<string, SessionResult> {
+  if (!perAuthor)
+    return dailyForStream(commits, params);
   const merged = new Map<string, SessionResult>();
   for (const list of groupByAuthor(commits).values()) {
-    for (const [day, r] of dailyForStream(list, opts)) {
+    for (const [day, r] of dailyForStream(list, params)) {
       const target = merged.get(day) ?? emptyResult();
       addInto(target, r);
       merged.set(day, target);

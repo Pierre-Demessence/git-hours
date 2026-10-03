@@ -6,6 +6,13 @@ export function formatHours(hours: number): string {
   return `${String(h).padStart(2, '0')}h ${String(m).padStart(2, '0')}m`;
 }
 
+// Like formatHours, with an explicit sign: "+01h 30m" / "-00h 45m" / "00h 00m".
+export function formatSignedHours(hours: number): string {
+  const minutes = Math.round(hours * 60);
+  const sign = minutes > 0 ? '+' : minutes < 0 ? '-' : '';
+  return `${sign}${formatHours(Math.abs(hours))}`;
+}
+
 export function formatTimeOfDay(date: Date): string {
   return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
 }
@@ -14,30 +21,6 @@ export function formatDateTime(date: Date): string {
   const d = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
   const t = `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}:${String(date.getSeconds()).padStart(2, '0')}`;
   return `${d} ${t}`;
-}
-
-// Format a Date as a bare local-time string (no Z, no T): "YYYY-MM-DD HH:mm:ss".
-// Git interprets this as local time, matching the local-time bucketing used by
-// dateKey(). Using .toISOString() (UTC, with Z) would silently shift commits
-// across day boundaries for non-UTC users.
-export function toLocalGitDate(d: Date): string {
-  return formatDateTime(d);
-}
-
-// Parse a user-supplied date bound to epoch ms, or null if invalid.
-// A bare YYYY-MM-DD means local midnight: `Date.parse` would treat it as UTC,
-// and git would treat it as that day at the *current* time of day.
-export function parseDateBound(value: string): number | null {
-  const m = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  if (m) {
-    const [y, mo, d] = m.slice(1).map(Number);
-    const date = new Date(y, mo - 1, d);
-    if (date.getFullYear() !== y || date.getMonth() !== mo - 1 || date.getDate() !== d)
-      return null;
-    return date.getTime();
-  }
-  const t = Date.parse(value);
-  return Number.isNaN(t) ? null : t;
 }
 
 export function dateKey(ts: number): string {

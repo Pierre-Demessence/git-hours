@@ -1,22 +1,3 @@
-export interface Options {
-  allAuthors: boolean;
-  allBranches: boolean;
-  author?: string;
-  autoGap: boolean;
-  branch?: string;
-  compare?: { since: string; until: string; label: string };
-  daily: boolean;
-  excludeAuthor: string[];
-  firstCommitMinutes: number;
-  format: 'text' | 'json' | 'csv';
-  gapMinutes: number;
-  heatmap: boolean;
-  repo?: string;
-  since?: string;
-  top?: number;
-  until?: string;
-}
-
 export interface CommitEntry {
   author: string;
   email: string;
@@ -30,4 +11,46 @@ export interface SessionResult {
   hours: number;
   lastCommit: Date | null;
   sessions: number;
+}
+
+// A half-open time window [since, until) in epoch ms; null means unbounded.
+export interface DateWindow {
+  label: string;
+  since: number | null;
+  until: number | null;
+}
+
+// Which commits to read from a repository. Independent of the repository
+// itself, so the same filter can be applied to several repos.
+export interface CommitFilter {
+  allBranches: boolean;
+  author?: string;
+  branch?: string;
+  excludeAuthor: string[];
+}
+
+export interface EstimateParams {
+  firstCommitMinutes: number;
+  gapMinutes: number;
+}
+
+export interface ReportOptions {
+  allAuthors: boolean;
+  autoGap: boolean;
+  daily: boolean;
+  firstCommitMinutes: number;
+  gapMinutes: number;
+  heatmap: boolean;
+  top?: number;
+}
+
+export type OutputFormat = 'text' | 'json' | 'csv';
+
+export interface Options {
+  compare?: DateWindow;
+  filter: CommitFilter;
+  format: OutputFormat;
+  repo?: string;
+  report: ReportOptions;
+  window: DateWindow;
 }
