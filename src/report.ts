@@ -1,5 +1,5 @@
 import type { GroupResult, KeyFn } from './estimate.ts';
-import type { CommitEntry, DateWindow, EstimateParams, RepoMode, ReportOptions, SessionResult } from './types.ts';
+import type { AuthorInfo, CommitEntry, DateWindow, EstimateParams, RepoMode, ReportOptions, SessionResult } from './types.ts';
 import { attributeGroups, byAuthor, byRepo, computeDailyBreakdown, dailyByGroup, estimateGroups, estimateTotal, pickAutoGap, sumResults } from './estimate.ts';
 import { dayName, isoWeekNumber } from './format.ts';
 import { computeHeatmap } from './heatmap.ts';
@@ -39,9 +39,13 @@ export interface CompareSection {
 }
 
 export interface Report {
-  // Present with --all-authors: ranked authors (limited by --top) and how many exist.
+  // Whose commits were counted.
+  author?: AuthorInfo;
+  // Present with --per-author: ranked authors (limited by --top) and how many exist.
   authors?: { count: number; shown: AuthorRow[] };
   compare?: CompareSection;
+  // The config file that was applied, if any.
+  configPath?: string;
   daily?: DailyRow[];
   heatmap?: number[][];
   params: EstimateParams & { autoGap: boolean };
@@ -70,7 +74,9 @@ export interface ScanInput {
 }
 
 export interface ReportInput extends WindowCommits {
+  author?: AuthorInfo;
   compare?: WindowCommits;
+  configPath?: string;
   // Present with --scan; commits then carry their `repo` name.
   scan?: ScanInput;
 }
@@ -92,17 +98,19 @@ export function buildReport(input: ReportInput, opts: ReportOptions): Report {
 
   // Groups estimated independently and summed. Per author always; per repo
   // only in independent mode (shared mode is one timeline: no grouping).
-  const independentKey: KeyFn | undefined = opts.allAuthors
+  const independentKey: KeyFn | undefined = opts.perAuthor
     ? byAuthor
     : scan && opts.repoMode === 'independent' ? byRepo : undefined;
 
   const report: Report = {
+    author: input.author,
+    configPath: input.configPath,
     params: { ...params, autoGap: opts.autoGap },
     total: estimateTotal(commits, params, independentKey),
     window: input.window,
   };
 
-  if (opts.allAuthors) {
+  if (opts.perAuthor) {
     const ranked = estimateGroups(commits, params, byAuthor);
     report.authors = {
       count: ranked.length,

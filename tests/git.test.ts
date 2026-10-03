@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, before, describe, it } from 'node:test';
 import { GitError } from '../src/errors.ts';
-import { applyExcludeAuthors, buildLogArgs, describeGitFailure, filterByAuthorDate, parseLogOutput, readCommits } from '../src/git.ts';
+import { applyExcludeAuthors, buildLogArgs, describeGitFailure, filterByAuthorDate, gitIdentity, parseLogOutput, readCommits, readGitConfig } from '../src/git.ts';
 
 const FS = '\x1F';
 
@@ -92,7 +92,7 @@ describe('filterByAuthorDate', () => {
 });
 
 describe('buildLogArgs', () => {
-  const filter = { allBranches: false, excludeAuthor: [] };
+  const filter = { allBranches: false, authors: [], excludeAuthor: [] };
 
   it('passes only a lower bound to git', () => {
     const args = buildLogArgs(filter, { since: new Date(2025, 2, 1).getTime(), until: new Date(2025, 3, 1).getTime() });
@@ -100,9 +100,9 @@ describe('buildLogArgs', () => {
     assert.ok(!args.some(a => a.startsWith('--until')));
   });
 
-  it('matches --author as a case-insensitive fixed string', () => {
-    const args = buildLogArgs({ ...filter, author: 'a.b' }, { since: null, until: null });
-    assert.deepEqual(args.slice(-3), ['--fixed-strings', '--regexp-ignore-case', '--author=a.b']);
+  it('matches authors as case-insensitive fixed strings, OR-ed', () => {
+    const args = buildLogArgs({ ...filter, authors: ['a.b', 'Me'] }, { since: null, until: null });
+    assert.deepEqual(args.slice(-4), ['--fixed-strings', '--regexp-ignore-case', '--author=a.b', '--author=Me']);
   });
 
   it('prefers --all over a branch', () => {
@@ -140,7 +140,7 @@ describe('readCommits (real git)', () => {
   after(() => rmSync(dir, { force: true, recursive: true }));
 
   const march = { since: new Date(2025, 2, 1).getTime(), until: new Date(2025, 3, 1).getTime() };
-  const filter = { allBranches: false, excludeAuthor: [] };
+  const filter = { allBranches: false, authors: [], excludeAuthor: [] };
 
   it('filters on author date, not committer date', async () => {
     const commits = await readCommits(dir, filter, march);
@@ -148,7 +148,8 @@ describe('readCommits (real git)', () => {
   });
 
   it('applies author filters', async () => {
-    assert.equal((await readCommits(dir, { ...filter, author: 'BOB' }, march)).length, 1);
+    assert.equal((await readCommits(dir, { ...filter, authors: ['BOB'] }, march)).length, 1);
+    assert.equal((await readCommits(dir, { ...filter, authors: ['bob', 'alice@x'] }, march)).length, 2);
     assert.equal((await readCommits(dir, { ...filter, excludeAuthor: ['bob'] }, march)).length, 1);
   });
 
@@ -160,5 +161,24 @@ describe('readCommits (real git)', () => {
     finally {
       rmSync(outside, { force: true, recursive: true });
     }
+  });
+});
+
+describe('readGitConfig / gitIdentity (real git)', () => {
+  let dir: string;
+  before(() => {
+    dir = mkdtempSync(join(tmpdir(), 'git-hours-identity-'));
+    execFileSync('git', ['init', '-q'], { cwd: dir });
+    execFileSync('git', ['config', 'user.email', 'me@example.com'], { cwd: dir });
+    execFileSync('git', ['config', 'user.name', 'Me Myself'], { cwd: dir });
+  });
+  after(() => rmSync(dir, { force: true, recursive: true }));
+
+  it('reads the repo-level identity as email then name', async () => {
+    assert.deepEqual(await gitIdentity(dir), ['me@example.com', 'Me Myself']);
+  });
+
+  it('returns undefined for an unset key', async () => {
+    assert.equal(await readGitConfig('githours.definitely-unset', dir), undefined);
   });
 });

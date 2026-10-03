@@ -28,9 +28,23 @@ export interface DateWindow {
 // itself, so the same filter can be applied to several repos.
 export interface CommitFilter {
   allBranches: boolean;
-  author?: string;
+  // Case-insensitive substrings of "Name <email>"; a commit matching any of
+  // them is kept. Empty means every author.
+  authors: string[];
   branch?: string;
   excludeAuthor: string[];
+}
+
+// Whose commits are counted:
+// - patterns: the --author patterns (or the config file's `author`);
+// - all: everyone (--all-authors, --per-author);
+// - git-config: the repository's own user.email / user.name (default).
+export type AuthorMode = 'patterns' | 'all' | 'git-config';
+
+export interface AuthorInfo {
+  mode: AuthorMode;
+  // The patterns actually used (with --scan, the union over all repos).
+  patterns: string[];
 }
 
 export interface EstimateParams {
@@ -52,12 +66,13 @@ export interface ScanOptions {
 }
 
 export interface ReportOptions {
-  allAuthors: boolean;
   autoGap: boolean;
   daily: boolean;
   firstCommitMinutes: number;
   gapMinutes: number;
   heatmap: boolean;
+  // Per-author breakdown (--per-author).
+  perAuthor: boolean;
   repoMode: RepoMode;
   top?: number;
 }
@@ -65,7 +80,11 @@ export interface ReportOptions {
 export type OutputFormat = 'text' | 'json' | 'csv';
 
 export interface Options {
+  authorMode: AuthorMode;
   compare?: DateWindow;
+  // The config file that was applied, if any.
+  configPath?: string;
+  // In git-config mode `filter.authors` is filled per repository at read time.
   filter: CommitFilter;
   format: OutputFormat;
   repo?: string;

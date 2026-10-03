@@ -7,12 +7,12 @@ import { renderText } from '../src/render/text.ts';
 import { buildReport } from '../src/report.ts';
 
 const opts: ReportOptions = {
-  allAuthors: false,
   autoGap: false,
   daily: false,
   firstCommitMinutes: 30,
   gapMinutes: 120,
   heatmap: false,
+  perAuthor: false,
   repoMode: 'shared',
 };
 const ALL: DateWindow = { label: 'all time', since: null, until: null };
@@ -33,7 +33,7 @@ describe('buildReport', () => {
 
   it('ranks authors, applies --top, and keeps the total over all authors', () => {
     const commits = [commit(T, 'Alice'), commit(T + 10 * MIN, 'Bob'), commit(T + 60 * MIN, 'Alice')];
-    const r = buildReport({ commits, window: ALL }, { ...opts, allAuthors: true, top: 1 });
+    const r = buildReport({ commits, window: ALL }, { ...opts, perAuthor: true, top: 1 });
     assert.equal(r.authors?.count, 2);
     assert.deepEqual(r.authors?.shown.map(a => a.author), ['Alice <alice@x>']);
     assert.equal(r.total.hours, 2); // Alice 1h30 + Bob 30m
@@ -73,6 +73,15 @@ describe('buildReport', () => {
 });
 
 describe('renderText', () => {
+  it('shows whose commits were counted and the config file', () => {
+    const header = (author: Parameters<typeof buildReport>[0]['author']) =>
+      renderText(buildReport({ author, commits: [], configPath: '~/.config/git-hours/config.json', window: ALL }, opts));
+    assert.match(header({ mode: 'git-config', patterns: ['me@x', 'Me'] }), /Author: me@x, Me \(from git config\)/);
+    assert.match(header({ mode: 'patterns', patterns: ['bob'] }), /Author: bob$/m);
+    assert.match(header({ mode: 'all', patterns: [] }), /Authors: all/);
+    assert.match(header(undefined), /Config: ~\/.config\/git-hours\/config.json/);
+  });
+
   it('prints a negative delta with its sign', () => {
     const r = buildReport({ commits: [], compare: { commits: [commit(T)], window: { label: 'prev', since: null, until: null } }, window: ALL }, opts);
     assert.match(renderText(r), /Delta: {2}-00h 30m {2}\(-1 commits, -100\.0% hours\)/);
@@ -84,7 +93,7 @@ describe('renderText', () => {
 
   it('labels the grand total when --top hides authors', () => {
     const commits = [commit(T, 'Alice'), commit(T, 'Bob')];
-    const out = renderText(buildReport({ commits, window: ALL }, { ...opts, allAuthors: true, top: 1 }));
+    const out = renderText(buildReport({ commits, window: ALL }, { ...opts, perAuthor: true, top: 1 }));
     assert.match(out, /showing top 1 of 2 authors/);
     assert.match(out, /Grand total \(all 2 authors\): 01h 00m/);
   });
@@ -106,7 +115,7 @@ describe('buildJson', () => {
   it('includes perAuthor, daily, heatmap and compare sections when requested', () => {
     const r = buildReport(
       { commits: [commit(T)], compare: { commits: [], window: ALL }, window: ALL },
-      { ...opts, allAuthors: true, daily: true, heatmap: true },
+      { ...opts, perAuthor: true, daily: true, heatmap: true },
     );
     const p = buildJson(r) as Record<string, unknown>;
     assert.equal(p.totalAuthors, 1);

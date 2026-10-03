@@ -36,6 +36,10 @@ export function buildJson(report: Report): Record<string, unknown> {
     params: report.params,
     total: jsonResult(report.total),
   };
+  if (report.author)
+    payload.author = report.author;
+  if (report.configPath)
+    payload.config = report.configPath;
 
   if (report.authors) {
     payload.perAuthor = report.authors.shown.map(({ author, result }) => ({ author, ...jsonResult(result) }));

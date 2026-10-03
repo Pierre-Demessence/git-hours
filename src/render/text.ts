@@ -1,5 +1,5 @@
 import type { DailyRow, Report } from '../report.ts';
-import type { SessionResult } from '../types.ts';
+import type { AuthorInfo, SessionResult } from '../types.ts';
 import { dateKey, formatDateTime, formatHours, formatSignedHours, formatTimeOfDay } from '../format.ts';
 
 function resultLines(label: string, result: SessionResult): string[] {
@@ -138,6 +138,12 @@ function heatmapLines(grid: number[][]): string[] {
   return lines;
 }
 
+function authorLabel(author: AuthorInfo): string {
+  if (author.mode === 'all' || author.patterns.length === 0)
+    return 'Authors: all';
+  return `Author: ${author.patterns.join(', ')}${author.mode === 'git-config' ? ' (from git config)' : ''}`;
+}
+
 export function renderText(report: Report): string {
   const { params } = report;
   const gapLabel = params.autoGap ? `${params.gapMinutes}min (auto)` : `${params.gapMinutes}min`;
@@ -145,8 +151,12 @@ export function renderText(report: Report): string {
     '',
     `⏱  Git Hours — ${report.window.label}`,
     `   Gap threshold: ${gapLabel} | First-commit credit: ${params.firstCommitMinutes}min`,
-    '',
   ];
+  if (report.author)
+    lines.push(`   ${authorLabel(report.author)}`);
+  if (report.configPath)
+    lines.push(`   Config: ${report.configPath}`);
+  lines.push('');
 
   if (report.repos) {
     lines.push(...repoLines(report.repos, report.total));

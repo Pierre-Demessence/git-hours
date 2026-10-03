@@ -52,9 +52,11 @@ export function buildLogArgs(filter: CommitFilter, range: Pick<DateWindow, 'sinc
   // stop walking early; the exact range is applied on author date afterwards.
   if (range.since !== null)
     args.push(`--since=${toLocalGitDate(new Date(range.since))}`);
-  if (filter.author)
+  if (filter.authors.length > 0) {
     // Fixed-string, case-insensitive: a substring match like --exclude-author.
-    args.push('--fixed-strings', '--regexp-ignore-case', `--author=${filter.author}`);
+    // Several --author flags are OR'ed by git.
+    args.push('--fixed-strings', '--regexp-ignore-case', ...filter.authors.map(a => `--author=${a}`));
+  }
   if (filter.allBranches)
     args.push('--all');
   else if (filter.branch)
@@ -126,6 +128,30 @@ export function runGit(args: string[], cwd?: string, options: RunGitOptions = {}
       }
     });
   });
+}
+
+// A git config value as git resolves it for `repo` (including includeIf),
+// or undefined when unset.
+export async function readGitConfig(key: string, repo?: string): Promise<string | undefined> {
+  try {
+    const value = (await runGit(['config', '--get', key], repo, { action: `read ${key}` })).trim();
+    return value || undefined;
+  }
+  catch (err) {
+    // `git config --get` exits 1 when the key is unset; anything else (not a
+    // repository, git missing) surfaces when the log is read.
+    if (err instanceof GitError)
+      return undefined;
+    throw err;
+  }
+}
+
+// The author patterns identifying "me" in `repo`: user.email and user.name
+// from git config. Matching the name too catches commits made with another
+// address (e.g. GitHub's noreply email for web edits).
+export async function gitIdentity(repo?: string): Promise<string[]> {
+  const [email, name] = await Promise.all([readGitConfig('user.email', repo), readGitConfig('user.name', repo)]);
+  return [email, name].filter((v): v is string => v !== undefined);
 }
 
 // Update all remotes of a repository, never prompting for credentials.

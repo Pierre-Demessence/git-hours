@@ -1,11 +1,16 @@
-import type { Options } from './types.ts';
+import type { FileConfig } from './config.ts';
+import type { AuthorMode, Options } from './types.ts';
 import { existsSync, statSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { Command, Option } from 'commander';
 import pkg from '../package.json' with { type: 'json' };
+import { loadConfig } from './config.ts';
 import { parseWindowSpec, resolveWindow } from './dates.ts';
 import { ExitRequest, UsageError } from './errors.ts';
 import { expandHome } from './scan.ts';
+
+const DEFAULT_GAP = 120;
+const DEFAULT_FIRST_COMMIT_CREDIT = 30;
 
 function parseNonNegativeNumber(name: string) {
   return (value: string): number => {
@@ -26,25 +31,29 @@ function validateDirectory(path: string, flag: string): void {
   // subdirectories of a work tree and bare repositories.
 }
 
+// Raw commander values. Options that a config file can provide have no
+// commander default, so `undefined` reliably means "not given on the CLI".
 interface RawOptions {
-  allAuthors: boolean;
-  allBranches: boolean;
-  author?: string;
-  autoGap: boolean;
+  allAuthors?: boolean;
+  allBranches?: boolean;
+  author?: string[];
+  autoGap?: boolean;
   branch?: string;
   compare?: string;
+  config?: string | false;
   csv: boolean;
   daily: boolean;
   excludeAuthor?: string[];
-  fetch: boolean;
-  firstCommitCredit: number;
-  gap: number;
+  fetch?: boolean;
+  firstCommitCredit?: number;
+  gap?: number;
   heatmap: boolean;
-  independentRepos: boolean;
+  independentRepos?: boolean;
   json: boolean;
   lastMonth?: boolean;
   lastWeek?: boolean;
   month?: string;
+  perAuthor?: boolean;
   repo?: string;
   scan?: boolean | string[];
   scanExclude?: string[];
@@ -58,10 +67,14 @@ interface RawOptions {
   yesterday?: boolean;
 }
 
-// Parse argv into Options. Throws UsageError on invalid input and ExitRequest
-// after --help / --version; never exits the process itself.
-export function parseArgs(argv: string[]): Options {
-  const program = new Command()
+export interface ParseOptions {
+  // Config file read when --config is not given (and --no-config isn't
+  // either). index.ts passes the XDG location; tests leave it out.
+  defaultConfigPath?: string;
+}
+
+function buildProgram(): Command {
+  return new Command()
     .name('git-hours')
     .description('Estimate work time from git commit history')
     .version(pkg.version, '-v, --version', 'output the version number')
@@ -75,29 +88,38 @@ export function parseArgs(argv: string[]): Options {
     .option('--last-week', 'shortcut: analyze the previous week')
     .option('--this-month', 'shortcut: analyze the current month')
     .option('--last-month', 'shortcut: analyze the previous month')
-    .addOption(new Option('--gap <minutes>', 'max gap between commits in a session').default(120).argParser(parseNonNegativeNumber('gap')))
-    .addOption(new Option('--first-commit-credit <minutes>', 'time credited for the first commit in a session').default(30).argParser(parseNonNegativeNumber('first-commit-credit')))
-    .addOption(new Option('--auto-gap', 'auto-pick gap from commit cadence (P90 of inter-commit deltas)').conflicts('gap').default(false))
-    .addOption(new Option('--author <name>', 'filter by author name or email (case-insensitive substring match)').conflicts('allAuthors'))
-    .option('--all-authors', 'show per-author breakdown', false)
-    .option('--exclude-author <name...>', 'exclude commits by author (repeatable, substring match)')
-    .addOption(new Option('--top <n>', 'limit --all-authors (or --scan) to the top N by hours').argParser(parseNonNegativeNumber('top')))
+    .addOption(new Option('--gap <minutes>', `max gap between commits in a session (default: ${DEFAULT_GAP})`).argParser(parseNonNegativeNumber('gap')))
+    .addOption(new Option('--first-commit-credit <minutes>', `time credited for the first commit in a session (default: ${DEFAULT_FIRST_COMMIT_CREDIT})`).argParser(parseNonNegativeNumber('first-commit-credit')))
+    .addOption(new Option('--auto-gap', 'auto-pick gap from commit cadence (P90 of inter-commit deltas)').conflicts('gap'))
+    .addOption(new Option('--author <pattern...>', 'count commits whose "Name <email>" contains a pattern (case-insensitive; default: your git user.email and user.name)').conflicts(['allAuthors', 'perAuthor']))
+    .option('--all-authors', 'count every author\'s commits (instead of only yours)')
+    .option('--per-author', 'per-author breakdown of every author\'s commits')
+    .option('--exclude-author <pattern...>', 'exclude commits by author (repeatable, substring match)')
+    .addOption(new Option('--top <n>', 'limit --per-author (or --scan) to the top N by hours').argParser(parseNonNegativeNumber('top')))
     .addOption(new Option('--branch <name>', 'analyze a specific branch (default: HEAD)').conflicts('allBranches'))
-    .option('--all-branches', 'analyze commits reachable from any ref', false)
+    .option('--all-branches', 'analyze commits reachable from any ref')
     .option('--daily', 'include the per-day breakdown', false)
     .option('--heatmap', 'print a 7×24 hour-of-day × day-of-week heatmap', false)
     .addOption(new Option('--json', 'output JSON instead of text').conflicts('csv').default(false))
     .addOption(new Option('--csv', 'output daily breakdown as CSV (implies --daily)').conflicts('json').default(false))
     .option('--repo <path>', 'path to git repository (default: current directory)')
-    .addOption(new Option('--scan [dirs...]', 'find git repositories recursively under dirs (default: current directory) and report per project').conflicts(['repo', 'branch', 'allAuthors']))
+    .addOption(new Option('--scan [dirs...]', 'find git repositories recursively under dirs (default: config `scan`, else current directory) and report per project').conflicts(['repo', 'branch', 'perAuthor']))
     .option('--scan-exclude <pattern...>', 'with --scan: skip folders matching a glob (a name, or a path relative to the scan root if it contains /)')
-    .option('--no-fetch', 'with --scan: do not run `git fetch` in each repository first')
-    .option('--independent-repos', 'with --scan: estimate each repo on its own (overlapping work counts once per repo)', false)
+    .option('--fetch', 'with --scan: run `git fetch` in each repository first (default)')
+    .option('--no-fetch', 'with --scan: do not run `git fetch` first')
+    .option('--independent-repos', 'with --scan: estimate each repo on its own (overlapping work counts once per repo)')
     .option('--compare <window>', 'compare to another window: a shortcut (e.g. last-month), YYYY-MM, or START..END')
-    .addHelpText('after', '\nExamples:\n  git-hours --month 2025-03\n  git-hours --since 2025-03-01 --until 2025-04-01\n  git-hours --week 2025-03-24\n  git-hours --this-week\n  git-hours --last-month\n  git-hours --gap 90 --first-commit-credit 20\n  git-hours --repo ../other-repo\n  git-hours --this-month --compare last-month\n  git-hours --scan ~/dev ~/work --last-month\n')
+    .option('--config <path>', 'read settings from this JSON file (default: ~/.config/git-hours/config.json)')
+    .option('--no-config', 'ignore the config file')
+    .addHelpText('after', '\nExamples:\n  git-hours --month 2025-03\n  git-hours --since 2025-03-01 --until 2025-04-01\n  git-hours --last-month --compare 2025-01\n  git-hours --gap 90 --first-commit-credit 20\n  git-hours --repo ../other-repo --per-author\n  git-hours --scan ~/dev ~/work --last-month\n')
     .configureOutput({ writeErr: () => {} })
     .exitOverride();
+}
 
+// Parse argv into Options. Throws UsageError on invalid input and ExitRequest
+// after --help / --version; never exits the process itself.
+export function parseArgs(argv: string[], parseOptions: ParseOptions = {}): Options {
+  const program = buildProgram();
   try {
     program.parse(argv, { from: 'user' });
   }
@@ -107,19 +129,34 @@ export function parseArgs(argv: string[]): Options {
       throw new ExitRequest();
     throw new UsageError(e.message.replace(/^error: /, ''));
   }
-
   const raw = program.opts<RawOptions>();
+
+  // --- config file -------------------------------------------------------
+  let config: FileConfig = {};
+  let configPath: string | undefined;
+  if (typeof raw.config === 'string') {
+    configPath = resolve(expandHome(raw.config));
+    config = loadConfig(configPath, true) ?? {};
+  }
+  else if (raw.config !== false && parseOptions.defaultConfigPath) {
+    const loaded = loadConfig(parseOptions.defaultConfigPath, false);
+    if (loaded) {
+      config = loaded;
+      configPath = parseOptions.defaultConfigPath;
+    }
+  }
+
+  // --- validation of CLI-only combinations -------------------------------
+  const scanning = raw.scan !== undefined;
 
   if (raw.branch?.startsWith('-'))
     throw new UsageError(`--branch must not start with '-' (got "${raw.branch}")`);
 
-  const scanning = raw.scan !== undefined;
-
   if (raw.top !== undefined) {
     if (!Number.isInteger(raw.top) || raw.top < 1)
       throw new UsageError('--top must be a positive integer');
-    if (!raw.allAuthors && !scanning)
-      throw new UsageError('--top requires --all-authors or --scan');
+    if (!raw.perAuthor && !scanning)
+      throw new UsageError('--top requires --per-author or --scan');
   }
 
   if (raw.repo !== undefined)
@@ -128,17 +165,13 @@ export function parseArgs(argv: string[]): Options {
   if (!scanning) {
     const scanOnly = [
       ['--scan-exclude', raw.scanExclude !== undefined],
-      ['--no-fetch', raw.fetch === false],
-      ['--independent-repos', raw.independentRepos],
+      ['--fetch / --no-fetch', raw.fetch !== undefined],
+      ['--independent-repos', raw.independentRepos !== undefined],
     ] as const;
     const used = scanOnly.find(([, on]) => on);
     if (used)
       throw new UsageError(`${used[0]} requires --scan`);
   }
-
-  const roots = raw.scan === true ? ['.'] : Array.isArray(raw.scan) ? raw.scan : [];
-  for (const root of roots)
-    validateDirectory(root, 'scan');
 
   const shortcuts = ([
     ['today', raw.today],
@@ -155,29 +188,53 @@ export function parseArgs(argv: string[]): Options {
   if (format === 'csv' && raw.compare !== undefined)
     throw new UsageError('--csv is not supported with --compare');
 
+  // --- merge: CLI, then config file, then defaults -----------------------
+  // Options that belong together are taken as a group from one source, so a
+  // CLI flag never combines with a conflicting config value.
+  const perAuthor = raw.perAuthor ?? false;
+  const cliChoseAuthors = raw.author !== undefined || raw.allAuthors !== undefined || raw.perAuthor !== undefined;
+  const authorSource = cliChoseAuthors ? { allAuthors: raw.allAuthors, author: raw.author } : config;
+  const authorMode: AuthorMode = perAuthor || authorSource.allAuthors
+    ? 'all'
+    : authorSource.author ? 'patterns' : 'git-config';
+
+  const cliChoseGap = raw.gap !== undefined || raw.autoGap !== undefined;
+  const gapSource = cliChoseGap ? { autoGap: raw.autoGap, gap: raw.gap } : config;
+
+  // --branch on the CLI overrides a config `allBranches`.
+  const allBranches = raw.allBranches ?? (raw.branch === undefined && config.allBranches) ?? false;
+
+  const roots = Array.isArray(raw.scan) ? raw.scan : raw.scan === true ? (config.scan ?? ['.']) : [];
+  for (const root of roots)
+    validateDirectory(root, 'scan');
+
   return {
+    authorMode,
     compare: raw.compare !== undefined ? parseWindowSpec(raw.compare, 'compare') : undefined,
+    configPath,
     filter: {
-      allBranches: raw.allBranches,
-      author: raw.author,
+      allBranches,
+      authors: authorMode === 'patterns' ? authorSource.author ?? [] : [],
       branch: raw.branch,
-      excludeAuthor: raw.excludeAuthor ?? [],
+      excludeAuthor: raw.excludeAuthor ?? config.excludeAuthor ?? [],
     },
     format,
     repo: raw.repo,
     report: {
-      allAuthors: raw.allAuthors,
-      autoGap: raw.autoGap,
+      autoGap: gapSource.autoGap ?? false,
       // --csv implies --daily for a single repo; with --scan, plain --csv is
       // one row per project and --daily makes it one row per project per day.
       daily: raw.daily || (raw.csv && !scanning),
-      firstCommitMinutes: raw.firstCommitCredit,
-      gapMinutes: raw.gap,
+      firstCommitMinutes: raw.firstCommitCredit ?? config.firstCommitCredit ?? DEFAULT_FIRST_COMMIT_CREDIT,
+      gapMinutes: gapSource.gap ?? DEFAULT_GAP,
       heatmap: raw.heatmap,
-      repoMode: raw.independentRepos ? 'independent' : 'shared',
+      perAuthor,
+      repoMode: (raw.independentRepos ?? config.independentRepos) ? 'independent' : 'shared',
       top: raw.top,
     },
-    scan: scanning ? { exclude: raw.scanExclude ?? [], fetch: raw.fetch, roots } : undefined,
+    scan: scanning
+      ? { exclude: raw.scanExclude ?? config.scanExclude ?? [], fetch: raw.fetch ?? config.fetch ?? true, roots }
+      : undefined,
     window,
   };
 }

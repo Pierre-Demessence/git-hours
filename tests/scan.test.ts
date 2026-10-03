@@ -130,7 +130,7 @@ describe('findRepos', () => {
 describe('readAll / fetchAll (real git)', () => {
   let root: string;
   const march = { label: '2025-03', since: new Date(2025, 2, 1).getTime(), until: new Date(2025, 3, 1).getTime() };
-  const filter = { allBranches: false, excludeAuthor: [] };
+  const filter = { allBranches: false, authors: [], excludeAuthor: [] };
 
   before(() => {
     root = mkdtempSync(join(tmpdir(), 'git-hours-read-'));

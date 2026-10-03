@@ -43,10 +43,11 @@ git-hours [options]
 | `--gap <minutes>` | Max gap between commits in a session (default: `120`) |
 | `--first-commit-credit <minutes>` | Time credited for the first commit in a session (default: `30`) |
 | `--auto-gap` | Auto-pick gap from commit cadence (P90 of inter-commit deltas ≤ 6h, clamped to 60–240) |
-| `--author <name>` | Filter by author name or email (case-insensitive substring match) |
-| `--all-authors` | Show per-author breakdown |
+| `--author <pattern...>` | Count commits whose `Name <email>` contains any of the patterns (case-insensitive). Default: your git `user.email` and `user.name` — see [Whose commits are counted](#whose-commits-are-counted) |
+| `--all-authors` | Count every author's commits, not only yours |
+| `--per-author` | Per-author breakdown of every author's commits |
 | `--exclude-author <name...>` | Exclude commits by author (repeatable, substring match) |
-| `--top <n>` | Limit `--all-authors` (or `--scan`) to the top N authors (projects) by hours |
+| `--top <n>` | Limit `--per-author` (or `--scan`) to the top N authors (projects) by hours |
 | `--branch <name>` | Analyze a specific branch (default: HEAD) |
 | `--all-branches` | Analyze commits reachable from any ref (includes remote-tracking refs — see note below) |
 | `--daily` | Include the per-day breakdown (off by default) |
@@ -54,11 +55,12 @@ git-hours [options]
 | `--json` | Emit machine-readable JSON instead of human text |
 | `--csv` | Emit the daily breakdown as CSV (implies `--daily`) |
 | `--repo <path>` | Path to git repository (default: current directory) |
-| `--scan [dirs...]` | Find git repositories recursively under `dirs` (default: current directory) and report per project — see [Scanning several projects](#scanning-several-projects) |
+| `--scan [dirs...]` | Find git repositories recursively under `dirs` (default: the config file's `scan`, else the current directory) and report per project — see [Scanning several projects](#scanning-several-projects) |
 | `--scan-exclude <pattern...>` | With `--scan`: skip folders matching a glob (`*`, `**`, `?`) |
-| `--no-fetch` | With `--scan`: don't `git fetch` each repository first |
+| `--no-fetch` / `--fetch` | With `--scan`: skip (or force) the `git fetch` of each repository (fetching is the default) |
 | `--independent-repos` | With `--scan`: estimate each repository on its own instead of on one shared timeline |
 | `--compare <window>` | Compare against another window: a shortcut (`last-month`, `last-week`, `this-month`, `this-week`, `today`, `yesterday`), `YYYY-MM`, or `START..END` (end exclusive, either side optional, e.g. `2025-03-01..2025-03-08`) |
+| `--config <path>` / `--no-config` | Read settings from another file, or ignore the config file — see [Config file](#config-file) |
 | `-h`, `--help` | Show help |
 | `-v`, `--version` | Show the version |
 
@@ -69,7 +71,7 @@ git-hours --month 2025-03
 git-hours --since 2025-03-01 --until 2025-04-01
 git-hours --week 2025-03-24
 git-hours --gap 90 --first-commit-credit 20
-git-hours --all-authors
+git-hours --per-author
 ```
 
 ### Notes
@@ -79,22 +81,23 @@ not its committer date, so commits rebased or cherry-picked later stay in the
 period they were written. `--month`, `--week`, the shortcuts and `--since`/`--until`
 are mutually exclusive.
 
-With `--all-authors`, each author is estimated separately and the total is the
+With `--per-author`, each author is estimated separately and the total is the
 sum of their hours (person-hours); `--top` only limits which authors are listed.
+`--all-authors` instead estimates everyone's commits as one stream.
 The `--daily` breakdown always sums to the total: a session crossing midnight is
 split between the two days.
 
 `--all-branches` passes `--all` to git, which walks **every ref** — including
 remote-tracking branches under `refs/remotes/*`. If you have local-only work,
 this is fine. If you fetch from a shared remote, single-author totals can be
-silently inflated by teammates' commits that exist on remote refs but never
-landed in your local branches. Combine with `--author <name>` (or `--exclude-author`)
-to scope to your own work.
+inflated by teammates' commits that exist on remote refs but never landed in
+your local branches — unless only your own commits are counted, which is the
+default.
 
 ## Scanning several projects
 
 ```sh
-git-hours --scan ~/dev ~/work --last-month --all-branches --author me@example.com
+git-hours --scan ~/dev ~/work --last-month --all-branches
 ```
 
 ```
@@ -137,7 +140,66 @@ git-hours --scan ~/dev ~/work --last-month --all-branches --author me@example.co
 - `--daily`, `--heatmap` and `--compare` work on the combined data. `--json`
   adds `scan` and `perRepo` (with per-project `daily` when `--daily` is set);
   `--csv` gives one row per project, or one per project per day with `--daily`.
-- `--scan` cannot be combined with `--repo`, `--branch` or `--all-authors`.
+- `--scan` cannot be combined with `--repo`, `--branch` or `--per-author`.
+- Your identity is read per repository, so `includeIf` setups (a work email
+  for `~/work`) are honoured.
+
+## Whose commits are counted
+
+By default only **your** commits count: git-hours reads `git config user.email`
+and `git config user.name` in the repository (as git resolves them, including
+`includeIf`) and keeps commits matching either. Matching the name too catches
+commits made with another address, such as GitHub's `…@users.noreply.github.com`
+for edits made on the website. The header always says which authors were used:
+
+```
+   Author: me@example.com, My Name (from git config)
+```
+
+- `--author <pattern...>` uses your own patterns instead (substrings of
+  `Name <email>`, case-insensitive, any of them may match).
+- `--all-authors` counts everyone; `--per-author` breaks everyone down by author.
+- `--exclude-author` removes matching commits in every mode.
+- With no git identity configured, git-hours stops and asks for `--author` or
+  `--all-authors` (with `--scan`, such repositories are skipped with a warning).
+
+## Config file
+
+Settings you'd pass every time can live in
+`~/.config/git-hours/config.json` (or `$XDG_CONFIG_HOME/git-hours/config.json`):
+
+```json
+{
+  "scan": ["~/dev", "~/work"],
+  "allBranches": true,
+  "gap": 90
+}
+```
+
+With that, the monthly report is just `git-hours --scan --last-month`.
+
+| Key | Type | Same as |
+| --- | --- | --- |
+| `author` | string or list | `--author` |
+| `allAuthors` | boolean | `--all-authors` |
+| `excludeAuthor` | string or list | `--exclude-author` |
+| `allBranches` | boolean | `--all-branches` |
+| `gap` | number | `--gap` |
+| `autoGap` | boolean | `--auto-gap` |
+| `firstCommitCredit` | number | `--first-commit-credit` |
+| `scan` | string or list | default folders for a bare `--scan` |
+| `scanExclude` | string or list | `--scan-exclude` |
+| `fetch` | boolean | `--fetch` / `--no-fetch` |
+| `independentRepos` | boolean | `--independent-repos` |
+
+- Command-line flags always win, per group: any of `--author` /
+  `--all-authors` / `--per-author` replaces the file's author settings, `--gap`
+  or `--auto-gap` replaces both `gap` and `autoGap`, and `--branch` overrides
+  `allBranches`.
+- Scan settings in the file only apply when you run `--scan`.
+- Unknown keys and wrong types are errors, so typos don't go unnoticed.
+- The header shows `Config: <path>` when a file was used. `--no-config` ignores
+  it; `--config <path>` reads another file.
 
 ## Tests
 
@@ -175,7 +237,8 @@ values or throws a `CliError`.
 ```
 src/
   index.ts        # main(): wires the pipeline, maps CliError to exit codes
-  cli.ts          # commander setup → Options (throws UsageError, never exits)
+  cli.ts          # commander setup → Options (CLI > config file > defaults; throws UsageError, never exits)
+  config.ts       # config file location, loading and validation
   dates.ts        # date windows: shortcuts, months, weeks, START..END specs
   git.ts          # async git log reading (readCommits) and parsing
   progress.ts     # stderr spinner (TTY only)

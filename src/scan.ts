@@ -157,14 +157,21 @@ export async function fetchAll(repos: FoundRepo[], hooks: ScanHooks): Promise<vo
   });
 }
 
-// Read every repo for each window. A repo that fails is reported and skipped;
-// if all of them fail, that is an error. Commits are tagged with their repo
-// name and de-duplicated across repos (repos are visited in name order).
-export async function readAll(repos: FoundRepo[], filter: CommitFilter, windows: DateWindow[], hooks: ScanHooks): Promise<CommitEntry[][]> {
+// Read every repo for each window, with the filter `filterFor` gives for it.
+// A repo that fails is reported and skipped; if all of them fail, that is an
+// error. Commits are tagged with their repo name and de-duplicated across
+// repos (repos are visited in name order).
+export async function readAll(
+  repos: FoundRepo[],
+  filterFor: CommitFilter | ((repo: FoundRepo) => Promise<CommitFilter>),
+  windows: DateWindow[],
+  hooks: ScanHooks,
+): Promise<CommitEntry[][]> {
   let done = 0;
   let failed = 0;
   const perRepo = await mapLimit(repos, CONCURRENCY, async (repo) => {
     try {
+      const filter = typeof filterFor === 'function' ? await filterFor(repo) : filterFor;
       const lists = await Promise.all(windows.map(w => readCommits(repo.path, filter, w)));
       return lists.map(list => list.map(c => ({ ...c, repo: repo.name })));
     }

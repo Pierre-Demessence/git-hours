@@ -4,6 +4,31 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [3.0.0] - 2026-10-04
+
+### Breaking changes
+
+- **Only your commits are counted by default.** Without `--author`,
+  git-hours now uses the repository's `git config user.email` and
+  `user.name` (as git resolves them, including `includeIf`). Use
+  `--all-authors` for the previous behaviour (everyone's commits).
+- `--all-authors` now means "count every author" (one combined estimate).
+  The per-author breakdown it used to produce is now **`--per-author`**.
+- `--top` requires `--per-author` or `--scan`.
+
+### Added
+
+- Config file at `~/.config/git-hours/config.json` (or
+  `$XDG_CONFIG_HOME/git-hours/config.json`) for `author`, `allAuthors`,
+  `excludeAuthor`, `allBranches`, `gap`, `autoGap`, `firstCommitCredit`,
+  `scan` (default roots for a bare `--scan`), `scanExclude`, `fetch` and
+  `independentRepos`. Command-line flags win; `--config <path>` and
+  `--no-config` select or skip the file.
+- `--author` accepts several patterns (any may match).
+- `--fetch` to force fetching when the config file disables it.
+- The header shows whose commits were counted and which config file was used;
+  JSON gains `author` and `config`.
+
 ## [2.1.0] - 2026-10-03
 
 ### Added
