@@ -2,6 +2,8 @@
 
 Estimate work time from git commit history. Groups commits into sessions based on a max gap threshold, then sums total estimated hours.
 
+See [CHANGELOG.md](CHANGELOG.md) for changes between versions.
+
 ## Install
 
 ```sh
@@ -34,7 +36,7 @@ git-hours [options]
 | `--since <date>` | Start date, inclusive (ISO, e.g. `2025-03-01`; a bare date means local midnight) |
 | `--until <date>` | End date, exclusive (ISO, e.g. `2025-04-01`) |
 | `--month <YYYY-MM>` | Shortcut: analyze a specific month |
-| `--week <YYYY-MM-DD>` | Shortcut: analyze the week starting on that date |
+| `--week <YYYY-MM-DD>` | Shortcut: analyze the Monday-based week containing that date |
 | `--today` / `--yesterday` | Shortcut: analyze today or yesterday |
 | `--this-week` / `--last-week` | Shortcut: analyze the current or previous week (Monday-based) |
 | `--this-month` / `--last-month` | Shortcut: analyze the current or previous month |
@@ -52,7 +54,7 @@ git-hours [options]
 | `--json` | Emit machine-readable JSON instead of human text |
 | `--csv` | Emit the daily breakdown as CSV (implies `--daily`) |
 | `--repo <path>` | Path to git repository (default: current directory) |
-| `--compare <ref>` | Compare against another window: token (`last-month`, `last-week`, `this-month`, `this-week`, `today`, `yesterday`), `YYYY-MM`, or `YYYY-MM-DD..YYYY-MM-DD` |
+| `--compare <window>` | Compare against another window: a shortcut (`last-month`, `last-week`, `this-month`, `this-week`, `today`, `yesterday`), `YYYY-MM`, or `START..END` (end exclusive, either side optional, e.g. `2025-03-01..2025-03-08`) |
 | `-h`, `--help` | Show help |
 | `-v`, `--version` | Show the version |
 
@@ -93,7 +95,7 @@ npm run lint
 npm run typecheck
 ```
 
-Runs Node's built-in test runner via `tsx` (used as a dev-time TS loader; not a runtime dependency). Tests cover the pure functions (session math, formatting, git log parsing, JSON/CSV output, `--compare` windows).
+Runs Node's built-in test runner via `tsx` (used as a dev-time TS loader; not a runtime dependency). Tests cover the session math, date windows, argument parsing, report building and rendering, and read commits from a throwaway git repository.
 
 ## How the estimate works
 For each ordered sequence of commits:
@@ -104,20 +106,38 @@ For each ordered sequence of commits:
 
 This is a heuristic — it's a useful approximation, not a timesheet.
 
+## Exit codes
+
+| Code | Meaning |
+| --- | --- |
+| `0` | Success (also after `--help` / `--version`) |
+| `1` | git failed (not a repository, no commits, git not installed…) |
+| `2` | Invalid arguments |
+
 ## Project layout
+
+The pipeline is: parse arguments → read commits → build a `Report` → render it.
+Only `index.ts` touches the process (stdout, exit code); everything else returns
+values or throws a `CliError`.
 
 ```
 src/
-  index.ts        # main() entry
-  cli.ts          # commander setup, argument parsing & validation
-  git.ts          # git log invocation
+  index.ts        # main(): wires the pipeline, maps CliError to exit codes
+  cli.ts          # commander setup → Options (throws UsageError, never exits)
+  dates.ts        # date windows: shortcuts, months, weeks, START..END specs
+  git.ts          # async git log reading (readCommits) and parsing
+  progress.ts     # stderr spinner (TTY only)
   estimate.ts     # session math (estimateHours, estimateTotal, computeDailyBreakdown, pickAutoGap)
-  format.ts       # date / hour / ISO-week formatting
+  report.ts       # buildReport(): commits → Report (totals, authors, daily, heatmap, compare)
+  render/
+    text.ts       # human-readable output
+    json.ts       # --json
+    csv.ts        # --csv
+  format.ts       # hour / date / ISO-week formatting
   heatmap.ts      # day-of-week × hour-of-day grid
-  output.ts       # JSON / CSV emitters
-  print.ts        # human text output
+  errors.ts       # CliError, UsageError, GitError, ExitRequest
   types.ts        # shared interfaces
-tests/            # node:test unit tests
+tests/            # node:test tests
 tsup.config.ts    # build configuration
 package.json      # bin = ./dist/index.js, prepare script runs tsup
 tsconfig.json     # IDE/type-check config (no emit)
