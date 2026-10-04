@@ -31,11 +31,9 @@ function jsonDailyRow({ date, day, result, week }: DailyRow) {
 }
 
 export function buildJson(report: Report): Record<string, unknown> {
-  const { gap, ...params } = report.params;
-  const iso = (t: number | undefined) => (t === undefined ? undefined : new Date(t).toISOString());
   const payload: Record<string, unknown> = {
     range: jsonRange(report.window),
-    params: { ...params, gap: { ...gap, from: iso(gap.from), until: iso(gap.until) } },
+    params: report.params,
     total: jsonResult(report.total),
   };
   if (report.author)
@@ -44,18 +42,17 @@ export function buildJson(report: Report): Record<string, unknown> {
     payload.config = report.configPath;
 
   if (report.authors) {
-    payload.perAuthor = report.authors.shown.map(({ author, gapMinutes, result }) => ({ author, ...jsonResult(result), ...(gapMinutes !== undefined ? { gapMinutes } : {}) }));
+    payload.perAuthor = report.authors.shown.map(({ author, result }) => ({ author, ...jsonResult(result) }));
     payload.totalAuthors = report.authors.count;
   }
 
   if (report.repos) {
     const { active, mode, roots, scanned, shown } = report.repos;
     payload.scan = { activeRepos: active, mode, roots, scannedRepos: scanned };
-    payload.perRepo = shown.map(({ daily, gapMinutes, name, path, result }) => ({
+    payload.perRepo = shown.map(({ daily, name, path, result }) => ({
       name,
       path,
       ...jsonResult(result),
-      ...(gapMinutes !== undefined ? { gapMinutes } : {}),
       ...(daily ? { daily: daily.map(jsonDailyRow) } : {}),
     }));
   }

@@ -1,8 +1,7 @@
-import type { GroupParams, GroupResult, KeyFn } from './estimate.ts';
-import type { AuthorInfo, CommitEntry, DateWindow, EstimateParams, GapInfo, RepoMode, ReportOptions, SessionResult } from './types.ts';
-import { attributeGroups, byAuthor, byRepo, computeDailyBreakdown, dailyByGroup, estimateGroups, estimateTotal, groupBy, sumResults } from './estimate.ts';
+import type { GroupResult, KeyFn } from './estimate.ts';
+import type { AuthorInfo, CommitEntry, DateWindow, EstimateParams, RepoMode, ReportOptions, SessionResult } from './types.ts';
+import { attributeGroups, byAuthor, byRepo, computeDailyBreakdown, dailyByGroup, estimateGroups, estimateTotal, sumResults } from './estimate.ts';
 import { dayName, isoWeekNumber } from './format.ts';
-import { calibrateGap } from './gap.ts';
 import { computeHeatmap } from './heatmap.ts';
 
 // The computed result of one analysis, independent of how it is rendered.
@@ -17,16 +16,12 @@ export interface DailyRow {
 
 export interface AuthorRow {
   author: string;
-  // This author's own calibrated gap (auto gap only).
-  gapMinutes?: number;
   result: SessionResult;
 }
 
 export interface RepoRow {
   // Per-day breakdown of this repo (only when the report has `daily`).
   daily?: DailyRow[];
-  // This repo's own calibrated gap (auto gap with --independent-repos).
-  gapMinutes?: number;
   name: string;
   path: string;
   result: SessionResult;
@@ -53,7 +48,7 @@ export interface Report {
   configPath?: string;
   daily?: DailyRow[];
   heatmap?: number[][];
-  params: EstimateParams & { gap: GapInfo };
+  params: EstimateParams & { gapSource: ReportOptions['gapSource'] };
   // Present with --scan: repos with activity, ranked (limited by --top).
   repos?: {
     // Repos with at least one commit in the window.
@@ -80,10 +75,6 @@ export interface ScanInput {
 
 export interface ReportInput extends WindowCommits {
   author?: AuthorInfo;
-  // Commits to calibrate the gap on (same filters, longer history), and the
-  // time calibration looks back from. Default: the window's own commits and
-  // end.
-  calibration?: { commits: CommitEntry[]; until: number };
   compare?: WindowCommits;
   configPath?: string;
   // Present with --scan; commits then carry their `repo` name.
@@ -96,50 +87,12 @@ function toDailyRows(days: Map<string, SessionResult>): DailyRow[] {
     .map(([date, result]) => ({ date, day: dayName(date), result, week: isoWeekNumber(date) }));
 }
 
-interface Calibrated {
-  info: GapInfo;
-  params: EstimateParams;
-  perGroup?: GroupParams;
-}
-
-// Decide the session gap: fixed, or learned from the calibration commits.
-// With a grouping (per author, per independent repo) each group gets its
-// own gap, falling back to the overall one when it has too little history.
-function calibrate(input: ReportInput, opts: ReportOptions, groupKey?: KeyFn): Calibrated {
-  const firstCommitMinutes = opts.firstCommitMinutes;
-  if (opts.gapMinutes !== undefined) {
-    return {
-      info: { perGroup: false, sampleGaps: 0, source: 'fixed' },
-      params: { firstCommitMinutes, gapMinutes: opts.gapMinutes },
-    };
-  }
-
-  const commits = input.calibration?.commits ?? input.commits;
-  const until = input.calibration?.until
-    ?? input.window.until
-    ?? input.commits.reduce((max, c) => Math.max(max, c.timestamp), 0) + 1;
-  const overall = calibrateGap(commits.map(c => c.timestamp), until);
-  const params = { firstCommitMinutes, gapMinutes: overall.gapMinutes };
-  const info: GapInfo = {
-    from: overall.from,
-    perGroup: groupKey !== undefined,
-    sampleGaps: overall.sampleGaps,
-    source: overall.source,
-    until: overall.until,
-  };
-  if (!groupKey)
-    return { info, params };
-
-  const perGroup: GroupParams = new Map();
-  for (const [key, list] of groupBy(commits, groupKey)) {
-    const own = calibrateGap(list.map(c => c.timestamp), until);
-    perGroup.set(key, { firstCommitMinutes, gapMinutes: own.source === 'auto' ? own.gapMinutes : overall.gapMinutes });
-  }
-  return { info, params, perGroup };
-}
-
 export function buildReport(input: ReportInput, opts: ReportOptions): Report {
   const { commits, scan } = input;
+  const params: EstimateParams = {
+    firstCommitMinutes: opts.firstCommitMinutes,
+    gapMinutes: opts.gapMinutes,
+  };
 
   // Groups estimated independently and summed. Per author always; per repo
   // only in independent mode (shared mode is one timeline: no grouping).
@@ -147,24 +100,19 @@ export function buildReport(input: ReportInput, opts: ReportOptions): Report {
     ? byAuthor
     : scan && opts.repoMode === 'independent' ? byRepo : undefined;
 
-  // The gap is decided once, from history ending with the main window, and
-  // reused for the compared window so both use the same yardstick.
-  const { info, params, perGroup } = calibrate(input, opts, independentKey);
-  const gapOf = (key: string) => (perGroup ? (perGroup.get(key) ?? params).gapMinutes : undefined);
-
   const report: Report = {
     author: input.author,
     configPath: input.configPath,
-    params: { ...params, gap: info },
-    total: estimateTotal(commits, params, independentKey, perGroup),
+    params: { ...params, gapSource: opts.gapSource },
+    total: estimateTotal(commits, params, independentKey),
     window: input.window,
   };
 
   if (opts.perAuthor) {
-    const ranked = estimateGroups(commits, params, byAuthor, perGroup);
+    const ranked = estimateGroups(commits, params, byAuthor);
     report.authors = {
       count: ranked.length,
-      shown: (opts.top ? ranked.slice(0, opts.top) : ranked).map(({ key, result }) => ({ author: key, gapMinutes: gapOf(key), result })),
+      shown: (opts.top ? ranked.slice(0, opts.top) : ranked).map(({ key, result }) => ({ author: key, result })),
     };
     // The total always covers every author; --top only limits the listing.
     report.total = sumResults(ranked.map(a => a.result));
@@ -174,9 +122,9 @@ export function buildReport(input: ReportInput, opts: ReportOptions): Report {
     const shared = opts.repoMode === 'shared';
     const ranked: GroupResult[] = shared
       ? attributeGroups(commits, params, byRepo)
-      : estimateGroups(commits, params, byRepo, perGroup);
+      : estimateGroups(commits, params, byRepo);
     const paths = new Map(scan.repos.map(r => [r.name, r.path]));
-    const repoDaily = opts.daily ? dailyByGroup(commits, params, byRepo, shared, perGroup) : undefined;
+    const repoDaily = opts.daily ? dailyByGroup(commits, params, byRepo, shared) : undefined;
     report.repos = {
       active: ranked.length,
       mode: opts.repoMode,
@@ -184,7 +132,6 @@ export function buildReport(input: ReportInput, opts: ReportOptions): Report {
       scanned: scan.repos.length,
       shown: (opts.top ? ranked.slice(0, opts.top) : ranked).map(({ key, result }) => ({
         daily: repoDaily ? toDailyRows(repoDaily.get(key) ?? new Map()) : undefined,
-        gapMinutes: shared ? undefined : gapOf(key),
         name: key,
         path: paths.get(key) ?? key,
         result,
@@ -193,13 +140,13 @@ export function buildReport(input: ReportInput, opts: ReportOptions): Report {
   }
 
   if (opts.daily)
-    report.daily = toDailyRows(computeDailyBreakdown(commits, params, independentKey, perGroup));
+    report.daily = toDailyRows(computeDailyBreakdown(commits, params, independentKey));
 
   if (opts.heatmap)
     report.heatmap = computeHeatmap(commits);
 
   if (input.compare) {
-    const other = estimateTotal(input.compare.commits, params, independentKey, perGroup);
+    const other = estimateTotal(input.compare.commits, params, independentKey);
     report.compare = {
       delta: {
         commits: report.total.commits - other.commits,

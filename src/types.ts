@@ -52,19 +52,6 @@ export interface EstimateParams {
   gapMinutes: number;
 }
 
-// Where the session gap came from.
-export interface GapInfo {
-  // Time span of the gaps learned from (epoch ms), when auto.
-  from?: number;
-  // Calibrated separately per author (--per-author) or per repo
-  // (--independent-repos); the value shown is the overall one.
-  perGroup: boolean;
-  // Same-day gaps the value was learned from (0 unless auto).
-  sampleGaps: number;
-  source: 'auto' | 'default' | 'fixed';
-  until?: number;
-}
-
 // How --scan splits time between repositories:
 // - shared: one timeline across all repos; a session moving between repos is
 //   counted once and its time goes to the repo of each commit (default);
@@ -81,8 +68,9 @@ export interface ScanOptions {
 export interface ReportOptions {
   daily: boolean;
   firstCommitMinutes: number;
-  // A fixed gap (--gap); undefined means calibrated from your history.
-  gapMinutes?: number;
+  gapMinutes: number;
+  // Whether the gap was chosen (--gap / config) or is the built-in default.
+  gapSource: 'set' | 'default';
   heatmap: boolean;
   // Per-author breakdown (--per-author).
   perAuthor: boolean;

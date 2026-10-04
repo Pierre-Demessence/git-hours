@@ -9,6 +9,10 @@ import { parseWindowSpec, resolveWindow } from './dates.ts';
 import { ExitRequest, UsageError } from './errors.ts';
 import { expandHome } from './scan.ts';
 
+// The longest pause still counted as work, when neither --gap nor the config
+// file sets one. It is a policy choice, not something commit history can
+// measure reliably, so users are encouraged to set their own (see README).
+const DEFAULT_GAP = 90;
 const DEFAULT_FIRST_COMMIT_CREDIT = 30;
 
 function parseNonNegativeNumber(name: string) {
@@ -87,7 +91,7 @@ function buildProgram(): Command {
     .option('--last-week', 'shortcut: analyze the previous week')
     .option('--this-month', 'shortcut: analyze the current month')
     .option('--last-month', 'shortcut: analyze the previous month')
-    .addOption(new Option('--gap <minutes>', 'fixed max gap between commits in a session (default: calibrated from your history)').argParser(parseNonNegativeNumber('gap')))
+    .addOption(new Option('--gap <minutes>', `longest pause between commits still counted as work (default: ${DEFAULT_GAP})`).argParser(parseNonNegativeNumber('gap')))
     .addOption(new Option('--first-commit-credit <minutes>', `time credited for the first commit in a session (default: ${DEFAULT_FIRST_COMMIT_CREDIT})`).argParser(parseNonNegativeNumber('first-commit-credit')))
     .addOption(new Option('--auto-gap').hideHelp())
     .addOption(new Option('--author <pattern...>', 'count commits whose "Name <email>" contains a pattern (case-insensitive; default: your git user.email and user.name)').conflicts(['allAuthors', 'perAuthor']))
@@ -131,7 +135,7 @@ export function parseArgs(argv: string[], parseOptions: ParseOptions = {}): Opti
   const raw = program.opts<RawOptions>();
 
   if (raw.autoGap)
-    throw new UsageError('--auto-gap was removed in 3.0: the gap is now calibrated automatically (use --gap to fix it)');
+    throw new UsageError('--auto-gap was removed in 3.0: commit history cannot pick the gap reliably; set your own with --gap or "gap" in the config file');
 
   // --- config file -------------------------------------------------------
   let config: FileConfig = {};
@@ -224,7 +228,8 @@ export function parseArgs(argv: string[], parseOptions: ParseOptions = {}): Opti
       // one row per project and --daily makes it one row per project per day.
       daily: raw.daily || (raw.csv && !scanning),
       firstCommitMinutes: raw.firstCommitCredit ?? config.firstCommitCredit ?? DEFAULT_FIRST_COMMIT_CREDIT,
-      gapMinutes: raw.gap ?? config.gap,
+      gapMinutes: raw.gap ?? config.gap ?? DEFAULT_GAP,
+      gapSource: raw.gap !== undefined || config.gap !== undefined ? 'set' : 'default',
       heatmap: raw.heatmap,
       perAuthor,
       repoMode: (raw.independentRepos ?? config.independentRepos) ? 'independent' : 'shared',

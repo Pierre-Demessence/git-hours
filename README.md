@@ -40,7 +40,7 @@ git-hours [options]
 | `--today` / `--yesterday` | Shortcut: analyze today or yesterday |
 | `--this-week` / `--last-week` | Shortcut: analyze the current or previous week (Monday-based) |
 | `--this-month` / `--last-month` | Shortcut: analyze the current or previous month |
-| `--gap <minutes>` | Fix the max gap between commits in a session (default: calibrated from your history — see [The session gap](#the-session-gap)) |
+| `--gap <minutes>` | Longest pause between two commits still counted as work (default: `90`) — see [Choosing your gap](#choosing-your-gap) |
 | `--first-commit-credit <minutes>` | Time credited for the first commit in a session (default: `30`) |
 | `--author <pattern...>` | Count commits whose `Name <email>` contains any of the patterns (case-insensitive). Default: your git `user.email` and `user.name` — see [Whose commits are counted](#whose-commits-are-counted) |
 | `--all-authors` | Count every author's commits, not only yours |
@@ -101,8 +101,7 @@ git-hours --scan ~/dev ~/work --last-month --all-branches
 
 ```
 ⏱  Git Hours — last-month (2026-09-01..2026-10-01)
-   Gap threshold: 75min (auto: learned from 5184 gaps, 2025-10-01..2026-09-30)
-   First-commit credit: 30min
+   Gap threshold: 60min | First-commit credit: 30min
    Author: me@example.com, My Name (from git config)
 
   Scanned 37 repos in ~/dev, ~/work · 3 with activity
@@ -172,7 +171,8 @@ Settings you'd pass every time can live in
 ```json
 {
   "scan": ["~/dev", "~/work"],
-  "allBranches": true
+  "allBranches": true,
+  "gap": 90
 }
 ```
 
@@ -184,7 +184,7 @@ With that, the monthly report is just `git-hours --scan --last-month`.
 | `allAuthors` | boolean | `--all-authors` |
 | `excludeAuthor` | string or list | `--exclude-author` |
 | `allBranches` | boolean | `--all-branches` |
-| `gap` | number | `--gap` (omit to calibrate automatically) |
+| `gap` | number | `--gap` |
 | `firstCommitCredit` | number | `--first-commit-credit` |
 | `scan` | string or list | default folders for a bare `--scan` |
 | `scanExclude` | string or list | `--scan-exclude` |
@@ -213,48 +213,47 @@ Runs Node's built-in test runner via `tsx` (used as a dev-time TS loader; not a 
 For each ordered sequence of commits:
 
 - The first commit of a session is credited `--first-commit-credit` minutes (default 30).
-- Subsequent commits within the session gap of the previous one are added at their actual elapsed time.
-- A longer pause ends the session and starts a new one (which itself gets `--first-commit-credit` minutes credited).
+- Subsequent commits within `--gap` minutes (default 90) of the previous one are added at their actual elapsed time.
+- A gap larger than `--gap` ends the session and starts a new one (which itself gets `--first-commit-credit` minutes credited).
 
 This is a heuristic — it's a useful approximation, not a timesheet.
 
-### The session gap
+### Choosing your gap
 
-The gap is the longest pause still counted as work. Too short and real work is
-split into sessions; too long and lunch or meetings are billed. Rather than one
-fixed value for everyone, git-hours **learns yours** from your history:
+The gap answers one question: **when you go X minutes without committing, are
+you usually still working?** Commit history can't answer it for you — pauses
+between commits don't separate cleanly into "working" and "on a break" (a
+long debugging stretch or a review of an agent's run looks just like lunch) —
+so it's a policy you pick once. It matters: on real histories, going from 60
+to 120 minutes can add 20–25% to the total.
 
-```
-   Gap threshold: 75min (auto: learned from 5184 gaps, 2025-10-01..2026-09-30)
-```
+1. **Lower bound — your longest normal stretch without committing.** Think of
+   reading code, debugging, testing, reviewing a long agent run. The gap must be
+   *longer* than that, or real work gets cut (the pause is dropped and only the
+   first-commit credit is added back).
+2. **Upper bound — your shortest real break.** Lunch, dinner, a meeting on
+   something else, an errand. The gap must be *shorter* than that, or the break
+   gets counted as work.
+3. **Pick a value in between.** For example: you commit at least every 45
+   minutes while working and your breaks are at least an hour → `60`.
+4. **Check it on a few days you remember well**, trying two or three values:
 
-- **What it learns from:** the pauses between your commits (same filters:
-  author, repos, branches) during the 12 months before the *end* of the report
-  window, or further back if that's fewer than 500 pauses. Re-running an old
-  month gives the same gap; `--compare` reuses it for both windows.
-- **How:** only same-day pauses (30s–8h) are used — nights and weekends say
-  nothing about where a session ends. On a log scale they form a large group of
-  in-session pauses and a smaller group of breaks. When the two are clearly
-  separated, the gap is where they meet (a two-component Gaussian mixture);
-  otherwise it is set two standard deviations above your typical in-session
-  pause, modelled from the lower half of the data. The result is clamped to
-  30–240 minutes.
-- **Not enough history** (fewer than 500 pauses in total): 90 minutes, and
-  the header says so. (Fixed values of 60–90 minutes were much closer to the
-  truth than the traditional 120 in the simulations; 90 stays safe for people
-  who work one session a day, who are the most likely to have little history.)
-- **`--per-author`** learns one gap per author, and `--scan --independent-repos`
-  one per repository; with too little history of its own, a group uses the
-  overall gap. With the default shared timeline, `--scan` uses one gap for all
-  your projects.
-- **`--gap <minutes>`** (or `"gap"` in the config file) fixes it instead, e.g.
-  to match a contract.
+   ```sh
+   git-hours --since 2026-09-18 --until 2026-09-19 --daily --gap 60
+   git-hours --since 2026-09-18 --until 2026-09-19 --daily --gap 90
+   ```
 
-The method was chosen by simulating several work patterns (steady, bursty,
-slow, meeting-heavy, evening-only) against a known ground truth. Over a year of
-history it estimated hours within ~2.5% on average (worst ~7%), versus ~14%
-(worst ~33%) for a fixed 120-minute gap and ~7% (worst ~21%) for the previous
-`--auto-gap`.
+   Keep the value whose hours match what you actually worked on those days.
+   The *Range* column shows the first and last commit of each day.
+5. **Save it** in the config file (`"gap": 60`) so every report uses it. The
+   header shows `(default)` next to the gap until you do.
+
+When unsure, a smaller gap is the conservative choice: it may under-count a
+little, while a too-large gap counts breaks as work.
+
+`--first-commit-credit` (default 30) is the other policy: the work before the
+first commit of a session (reading, planning, setting up). If you typically
+spend an hour before your first commit, raise it.
 
 ## Exit codes
 
@@ -275,7 +274,6 @@ src/
   index.ts        # main(): wires the pipeline, maps CliError to exit codes
   cli.ts          # commander setup → Options (CLI > config file > defaults; throws UsageError, never exits)
   config.ts       # config file location, loading and validation
-  gap.ts          # session-gap calibration from commit history
   dates.ts        # date windows: shortcuts, months, weeks, START..END specs
   git.ts          # async git log reading (readCommits) and parsing
   progress.ts     # stderr spinner (TTY only)

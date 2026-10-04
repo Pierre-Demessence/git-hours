@@ -12,7 +12,8 @@ describe('parseArgs', () => {
     const o = parseArgs([]);
     assert.equal(o.format, 'text');
     assert.equal(o.authorMode, 'git-config');
-    assert.equal(o.report.gapMinutes, undefined); // calibrated
+    assert.equal(o.report.gapMinutes, 90);
+    assert.equal(o.report.gapSource, 'default');
     assert.equal(o.report.firstCommitMinutes, 30);
     assert.equal(o.report.perAuthor, false);
     assert.equal(o.window.label, 'all time');
@@ -133,6 +134,7 @@ describe('parseArgs with a config file', () => {
     assert.equal(o.authorMode, 'patterns');
     assert.deepEqual(o.filter, { allBranches: true, authors: ['me@x'], branch: undefined, excludeAuthor: ['bot'] });
     assert.equal(o.report.gapMinutes, 90);
+    assert.equal(o.report.gapSource, 'set');
     assert.equal(o.report.firstCommitMinutes, 15);
     assert.equal(o.report.repoMode, 'independent');
     assert.deepEqual(o.scan, { exclude: ['old'], fetch: false, roots: [dir] });
@@ -149,6 +151,7 @@ describe('parseArgs with a config file', () => {
     assert.equal(o.authorMode, 'all');
     assert.deepEqual(o.filter.authors, []);
     assert.equal(o.report.gapMinutes, 45);
+    assert.equal(o.report.gapSource, 'set');
     assert.deepEqual(o.filter.excludeAuthor, ['ci']);
     assert.deepEqual(o.scan, { exclude: [], fetch: true, roots: ['.'] });
   });
@@ -168,7 +171,7 @@ describe('parseArgs with a config file', () => {
 
   it('--no-config ignores the file and --config picks another one', () => {
     write({ gap: 90 });
-    assert.equal(parse(['--no-config']).report.gapMinutes, undefined);
+    assert.equal(parse(['--no-config']).report.gapMinutes, 90);
     const other = join(dir, 'other.json');
     writeFileSync(other, JSON.stringify({ gap: 30 }));
     const o = parse(['--config', other]);

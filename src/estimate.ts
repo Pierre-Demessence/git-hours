@@ -56,15 +56,10 @@ export interface GroupResult {
 
 const byHoursDesc = (a: GroupResult, b: GroupResult) => b.result.hours - a.result.hours;
 
-// Parameters of one group: its own entry in `perGroup` (e.g. a gap
-// calibrated per author), else the shared `params`.
-export type GroupParams = Map<string, EstimateParams>;
-const paramsOf = (params: EstimateParams, key: string, perGroup?: GroupParams) => perGroup?.get(key) ?? params;
-
 // Each group estimated on its own, ranked by hours descending.
-export function estimateGroups(commits: CommitEntry[], params: EstimateParams, keyOf: KeyFn, perGroup?: GroupParams): GroupResult[] {
+export function estimateGroups(commits: CommitEntry[], params: EstimateParams, keyOf: KeyFn): GroupResult[] {
   return [...groupBy(commits, keyOf).entries()]
-    .map(([key, list]) => ({ key, result: estimateHours(list, paramsOf(params, key, perGroup)) }))
+    .map(([key, list]) => ({ key, result: estimateHours(list, params) }))
     .sort(byHoursDesc);
 }
 
@@ -103,10 +98,10 @@ export function sumResults(results: SessionResult[]): SessionResult {
 // independently and summed: per author that gives person-hours, so
 // interleaved commits from different people are never mistaken for one
 // continuous session.
-export function estimateTotal(commits: CommitEntry[], params: EstimateParams, groupKey?: KeyFn, perGroup?: GroupParams): SessionResult {
+export function estimateTotal(commits: CommitEntry[], params: EstimateParams, groupKey?: KeyFn): SessionResult {
   if (!groupKey)
     return estimateHours(commits, params);
-  return sumResults(estimateGroups(commits, params, groupKey, perGroup).map(g => g.result));
+  return sumResults(estimateGroups(commits, params, groupKey).map(g => g.result));
 }
 
 // Walk ONE timeline with the same session rules as estimateHours, crediting
@@ -198,16 +193,16 @@ function mergeDaily(maps: Iterable<Map<string, SessionResult>>): Map<string, Ses
 // Per-day breakdown. Sessions crossing midnight are split between the days.
 // With `groupKey` it is the sum of each group's own breakdown, so it always
 // adds up to estimateTotal() with the same grouping.
-export function computeDailyBreakdown(commits: CommitEntry[], params: EstimateParams, groupKey?: KeyFn, perGroup?: GroupParams): Map<string, SessionResult> {
+export function computeDailyBreakdown(commits: CommitEntry[], params: EstimateParams, groupKey?: KeyFn): Map<string, SessionResult> {
   if (!groupKey)
     return dailyForStream(commits, params);
-  return mergeDaily([...groupBy(commits, groupKey).entries()].map(([key, list]) => dailyForStream(list, paramsOf(params, key, perGroup))));
+  return mergeDaily([...groupBy(commits, groupKey).values()].map(list => dailyForStream(list, params)));
 }
 
 // Per-group, per-day breakdown: on one shared timeline (`shared`) or with
 // each group estimated on its own.
-export function dailyByGroup(commits: CommitEntry[], params: EstimateParams, keyOf: KeyFn, shared: boolean, perGroup?: GroupParams): Map<string, Map<string, SessionResult>> {
+export function dailyByGroup(commits: CommitEntry[], params: EstimateParams, keyOf: KeyFn, shared: boolean): Map<string, Map<string, SessionResult>> {
   if (shared)
     return attributeDaily(commits, params, keyOf);
-  return new Map([...groupBy(commits, keyOf).entries()].map(([key, list]) => [key, dailyForStream(list, paramsOf(params, key, perGroup))]));
+  return new Map([...groupBy(commits, keyOf).entries()].map(([key, list]) => [key, dailyForStream(list, params)]));
 }

@@ -53,7 +53,7 @@ export function validateConfig(raw: unknown, path: string): FileConfig {
     if (key === '$schema')
       continue;
     if (key === 'autoGap')
-      fail('"autoGap" was removed in 3.0: the gap is calibrated automatically unless "gap" is set');
+      fail('"autoGap" was removed in 3.0: commit history cannot pick the gap reliably; set "gap" instead');
     const kind = KEYS[key as keyof FileConfig];
     if (!kind)
       fail(`unknown key "${key}" (allowed: ${Object.keys(KEYS).join(', ')})`);

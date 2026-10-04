@@ -15,20 +15,18 @@ All notable changes to this project are documented here. The format follows
 - `--all-authors` now means "count every author" (one combined estimate).
   The per-author breakdown it used to produce is now **`--per-author`**.
 - `--top` requires `--per-author` or `--scan`.
-- **The session gap is calibrated automatically by default**, from your
-  commits of the 12 months before the end of the report window (further back
-  if needed), with a new method (see README, "The session gap"). `--auto-gap`
-  and the `autoGap` config key are removed; `--gap` / `"gap"` fix the value.
-  Without enough history (500 same-day pauses) the gap is 90 minutes
-  (previously a fixed 120 default). `--per-author` and `--independent-repos`
-  calibrate per author / per repository. JSON `params.autoGap` is replaced by
-  `params.gap` (source, sample size, period).
+- **The default gap is 90 minutes** (was 120), and `--auto-gap` is removed:
+  on real histories, pauses between commits don't split cleanly into work and
+  breaks, so no rule picks the gap reliably (the old P90 rule included). Set
+  your own with `--gap` or `"gap"` in the config file — see README, "Choosing
+  your gap". The header shows `(default)` until you do, and JSON
+  `params.autoGap` is replaced by `params.gapSource` (`set` or `default`).
 
 ### Added
 
 - Config file at `~/.config/git-hours/config.json` (or
   `$XDG_CONFIG_HOME/git-hours/config.json`) for `author`, `allAuthors`,
-  `excludeAuthor`, `allBranches`, `gap`, `autoGap`, `firstCommitCredit`,
+  `excludeAuthor`, `allBranches`, `gap`, `firstCommitCredit`,
   `scan` (default roots for a bare `--scan`), `scanExclude`, `fetch` and
   `independentRepos`. Command-line flags win; `--config <path>` and
   `--no-config` select or skip the file.

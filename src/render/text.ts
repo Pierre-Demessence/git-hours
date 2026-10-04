@@ -1,5 +1,5 @@
 import type { DailyRow, Report } from '../report.ts';
-import type { AuthorInfo, GapInfo, SessionResult } from '../types.ts';
+import type { AuthorInfo, SessionResult } from '../types.ts';
 import { dateKey, formatDateTime, formatHours, formatSignedHours, formatTimeOfDay } from '../format.ts';
 
 function resultLines(label: string, result: SessionResult): string[] {
@@ -48,30 +48,16 @@ function repoLines(repos: NonNullable<Report['repos']>, total: SessionResult): s
 
   const day = (d: Date | null) => (d ? dateKey(d.getTime()) : '—');
   const nameWidth = Math.max('Project'.length, 'Total'.length, ...shown.map(r => r.name.length));
-  const withGap = shown.some(r => r.gapMinutes !== undefined);
-  // [header, width, align, cell]
-  type Column = [string, number, 'left' | 'right', (r: { gapMinutes?: number; name: string; result: SessionResult }) => string];
-  const columns: Column[] = [
-    ['Project', nameWidth, 'left', r => r.name],
-    ['Time', 8, 'right', r => formatHours(r.result.hours)],
-    ['Commits', 7, 'right', r => String(r.result.commits)],
-    ['Sessions', 8, 'right', r => String(r.result.sessions)],
-    ...(withGap ? [['Gap', 6, 'right', r => (r.gapMinutes !== undefined ? `${r.gapMinutes}m` : '')] as Column] : []),
-    ['First', 10, 'left', r => day(r.result.firstCommit)],
-    ['Last', 10, 'left', r => day(r.result.lastCommit)],
-  ];
   const SEP = '  ';
-  const line = (cells: string[]) => `  ${cells.join(SEP)}`.trimEnd();
-  const pad = (text: string, [, width, align]: Column) => (align === 'left' ? text.padEnd(width) : text.padStart(width));
-  const row = (r: Parameters<Column[3]>[0]) => line(columns.map(c => pad(c[3](r), c)));
-  const rule = line(columns.map(([, width]) => '─'.repeat(width)));
+  const row = (name: string, r: SessionResult) =>
+    `  ${name.padEnd(nameWidth)}${SEP}${formatHours(r.hours).padStart(8)}${SEP}${String(r.commits).padStart(7)}${SEP}${String(r.sessions).padStart(8)}${SEP}${day(r.firstCommit).padEnd(10)}${SEP}${day(r.lastCommit)}`;
 
   lines.push(
-    line(columns.map(c => pad(c[0], c))),
-    rule,
-    ...shown.map(row),
-    rule,
-    row({ name: 'Total', result: total }),
+    `  ${'Project'.padEnd(nameWidth)}${SEP}${'Time'.padStart(8)}${SEP}${'Commits'.padStart(7)}${SEP}${'Sessions'.padStart(8)}${SEP}${'First'.padEnd(10)}${SEP}Last`,
+    `  ${'─'.repeat(nameWidth)}${SEP}${'─'.repeat(8)}${SEP}${'─'.repeat(7)}${SEP}${'─'.repeat(8)}${SEP}${'─'.repeat(10)}${SEP}${'─'.repeat(10)}`,
+    ...shown.map(r => row(r.name, r.result)),
+    `  ${'─'.repeat(nameWidth)}${SEP}${'─'.repeat(8)}${SEP}${'─'.repeat(7)}${SEP}${'─'.repeat(8)}${SEP}${'─'.repeat(10)}${SEP}${'─'.repeat(10)}`,
+    row('Total', total),
   );
   if (shown.length < active)
     lines.push(`  (showing top ${shown.length} of ${active} projects; the total covers all of them)`);
@@ -152,15 +138,6 @@ function heatmapLines(grid: number[][]): string[] {
   return lines;
 }
 
-function gapLabel(gapMinutes: number, gap: GapInfo, grouping: string | undefined): string {
-  if (gap.source === 'fixed')
-    return `${gapMinutes}min (fixed)`;
-  if (gap.source === 'default')
-    return `${gapMinutes}min (default: not enough history to calibrate${grouping ? `; ${grouping} where possible` : ''})`;
-  const span = gap.from !== undefined && gap.until !== undefined ? `, ${dateKey(gap.from)}..${dateKey(gap.until)}` : '';
-  return `${gapMinutes}min (auto: learned from ${gap.sampleGaps} gaps${span}${grouping ? `; ${grouping}` : ''})`;
-}
-
 function authorLabel(author: AuthorInfo): string {
   if (author.mode === 'all' || author.patterns.length === 0)
     return 'Authors: all';
@@ -169,12 +146,11 @@ function authorLabel(author: AuthorInfo): string {
 
 export function renderText(report: Report): string {
   const { params } = report;
-  const grouping = params.gap.perGroup ? (report.authors ? 'calibrated per author' : 'calibrated per repo') : undefined;
+  const gapLabel = params.gapSource === 'default' ? `${params.gapMinutes}min (default)` : `${params.gapMinutes}min`;
   const lines = [
     '',
     `⏱  Git Hours — ${report.window.label}`,
-    `   Gap threshold: ${gapLabel(params.gapMinutes, params.gap, grouping)}`,
-    `   First-commit credit: ${params.firstCommitMinutes}min`,
+    `   Gap threshold: ${gapLabel} | First-commit credit: ${params.firstCommitMinutes}min`,
   ];
   if (report.author)
     lines.push(`   ${authorLabel(report.author)}`);
@@ -187,12 +163,8 @@ export function renderText(report: Report): string {
   }
   else if (report.authors) {
     const { count, shown } = report.authors;
-    for (const { author, gapMinutes, result } of shown) {
-      lines.push(...resultLines(author, result));
-      if (gapMinutes !== undefined && result.commits > 0)
-        lines.push(`    Gap:          ${gapMinutes}min`);
-      lines.push('');
-    }
+    for (const { author, result } of shown)
+      lines.push(...resultLines(author, result), '');
     if (shown.length < count) {
       lines.push(
         `  (showing top ${shown.length} of ${count} authors)`,
